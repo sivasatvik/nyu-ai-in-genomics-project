@@ -27,6 +27,12 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+import sys
+# Force line-buffered stdout so print statements appear immediately in sbatch /
+# Singularity logs rather than being flushed only at script exit.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
