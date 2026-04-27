@@ -68,7 +68,8 @@ for p in [CFG["raw_dir"], CFG["processed_dir"], CFG["output_dir"]]:
 
 print("[config] directories are ready:", CFG["raw_dir"], CFG["processed_dir"], CFG["output_dir"], flush=True)
 
-UNIPROT_URL = "https://rest.uniprot.org/uniprotkb/stream"
+UNIPROT_URL = "https://rest.uniprot.org/uniprotkb/search"
+UNIPROT_PAGE_SIZE = 250
 NASA_EXO_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
 
 # %% [markdown]
@@ -165,12 +166,53 @@ def safe_get(url, params=None, timeout=60, attempts=4, backoff=2):
     if last_exc is not None:
         raise last_exc
 
+def fetch_uniprot_tsv(query, fields, max_records, page_size=UNIPROT_PAGE_SIZE):
+    lines = []
+    next_url = None
+    fetched = 0
+    page = 1
+
+    while fetched < max_records:
+        if next_url is None:
+            params = {
+                "query": query,
+                "format": "tsv",
+                "fields": fields,
+                "size": min(page_size, max_records - fetched),
+            }
+            response = safe_get(UNIPROT_URL, params=params)
+        else:
+            response = safe_get(next_url)
+
+        page_lines = response.text.strip().splitlines()
+        if not page_lines:
+            break
+
+        if not lines:
+            lines.extend(page_lines)
+        else:
+            lines.extend(page_lines[1:])
+
+        fetched = max(0, len(lines) - 1)
+        print(f"[download] fetched UniProt page {page} with {max(0, len(page_lines) - 1)} rows", flush=True)
+        page += 1
+
+        next_url = response.links.get("next", {}).get("url")
+        if not next_url:
+            break
+
+    return lines[: max_records + 1] if lines else lines
+
 def download_all(cfg):
     out_dir = Path(cfg["raw_dir"])
     print("[download] starting raw data fetch", flush=True)
     try:
-        params = {"query":"reviewed:true","format":"tsv","fields":"accession,sequence,protein_name,organism_name","size":cfg["max_records"]}
-        (out_dir / "uniprot_sample.tsv").write_text(safe_get(UNIPROT_URL, params=params).text, encoding="utf-8")
+        lines = fetch_uniprot_tsv(
+            query="reviewed:true",
+            fields="accession,sequence,protein_name,organism_name",
+            max_records=cfg["max_records"],
+        )
+        (out_dir / "uniprot_sample.tsv").write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
         print("[download] wrote uniprot_sample.tsv", flush=True)
     except Exception as e:
         print("[warn] uniprot sample failed", e, flush=True)
@@ -185,9 +227,13 @@ def download_all(cfg):
     ext_path = out_dir / "extremophile_sequences.jsonl"
     records=[]
     for item in EXTREMOPHILE_CATALOG:
-        params={"query": f"reviewed:true AND organism_name:\"{item['organism']}\"", "format":"tsv", "fields":"accession,sequence,protein_name,organism_name", "size":cfg["extremophile_per_organism"]}
+        query = f'reviewed:true AND organism_name:"{item["organism"]}"'
         try:
-            lines=safe_get(UNIPROT_URL, params=params).text.strip().splitlines()
+            lines = fetch_uniprot_tsv(
+                query=query,
+                fields="accession,sequence,protein_name,organism_name",
+                max_records=cfg["extremophile_per_organism"],
+            )
             for row in lines[1:]:
                 cols=row.split("\t")
                 if len(cols)<4: continue
@@ -205,6 +251,7 @@ def download_all(cfg):
     print("[download] wrote extremophile_sequences.jsonl with", len(records), "records", flush=True)
 
     return
+
 
 download_all(CFG)
 

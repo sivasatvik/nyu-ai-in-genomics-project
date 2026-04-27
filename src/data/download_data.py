@@ -14,6 +14,7 @@ from data.extremophile_catalog import EXTREMOPHILE_CATALOG
 from data.vector_builder import derive_env_vector_from_extremophile_meta
 
 UNIPROT_URL = "https://rest.uniprot.org/uniprotkb/stream"
+UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
 NASA_EXO_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
 
 
@@ -41,15 +42,52 @@ def safe_get(url: str, params: dict | None = None, timeout: int = 60):
     raise last_exc
 
 
+def fetch_uniprot_tsv(query: str, fields: str, max_records: int, page_size: int = 250) -> list[str]:
+    lines: list[str] = []
+    next_url: str | None = None
+    fetched = 0
+    page = 1
+
+    while fetched < max_records:
+        if next_url is None:
+            params = {
+                "query": query,
+                "format": "tsv",
+                "fields": fields,
+                "size": min(page_size, max_records - fetched),
+            }
+            response = safe_get(UNIPROT_SEARCH_URL, params=params)
+        else:
+            response = safe_get(next_url)
+
+        page_lines = response.text.strip().splitlines()
+        if not page_lines:
+            break
+
+        if not lines:
+            lines.extend(page_lines)
+        else:
+            lines.extend(page_lines[1:])
+
+        fetched = max(0, len(lines) - 1)
+        print(f"[download] fetched UniProt page {page} with {max(0, len(page_lines) - 1)} rows")
+        page += 1
+
+        next_url = response.links.get("next", {}).get("url")
+        if not next_url:
+            break
+
+    return lines[: max_records + 1] if lines else lines
+
+
 def download_uniprot(out_dir: Path, max_records: int = 5000) -> Path:
     out_path = out_dir / "uniprot_sample.tsv"
-    params = {
-        "query": "reviewed:true",
-        "format": "tsv",
-        "fields": "accession,sequence,protein_name,organism_name",
-        "size": max_records,
-    }
-    out_path.write_text(safe_get(UNIPROT_URL, params=params).text, encoding="utf-8")
+    lines = fetch_uniprot_tsv(
+        query="reviewed:true",
+        fields="accession,sequence,protein_name,organism_name",
+        max_records=max_records,
+    )
+    out_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     return out_path
 
 
@@ -67,12 +105,13 @@ def download_extremophile_sequences(out_dir: Path, per_organism: int = 60) -> Pa
         organism = item["organism"]
         params = {
             "query": f'reviewed:true AND organism_name:"{organism}"',
-            "format": "tsv",
-            "fields": "accession,sequence,protein_name,organism_name",
-            "size": per_organism,
         }
         try:
-            text = safe_get(UNIPROT_URL, params=params).text.strip().splitlines()
+            text = fetch_uniprot_tsv(
+                query=params["query"],
+                fields="accession,sequence,protein_name,organism_name",
+                max_records=per_organism,
+            )
             for row in text[1:]:
                 cols = row.split("\t")
                 if len(cols) < 4:
