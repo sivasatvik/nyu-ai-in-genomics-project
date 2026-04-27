@@ -8,7 +8,7 @@
 
 # %%
 # Uncomment if needed
-!pip install torch transformers pandas numpy scikit-learn requests tqdm pyyaml
+# !pip install torch transformers pandas numpy scikit-learn requests tqdm pyyaml
 
 import json, math, random
 from pathlib import Path
