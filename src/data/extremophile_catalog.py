@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+# Curated Earth extremophiles with habitat + proxy geochemistry features.
+# These proxies are converted to the 10D model environment vector by vector_builder.py.
+EXTREMOPHILE_CATALOG = [
+    {
+        "organism": "Pyrococcus furiosus",
+        "habitat": "hydrothermal_vent",
+        "temperature_c": 100,
+        "ph": 6.5,
+        "salinity_psu": 35,
+        "sulfur_rich": 0.95,
+        "iron_rich": 0.85,
+        "radiation_index": 0.2,
+        "function_label": 6,
+    },
+    {
+        "organism": "Thermus aquaticus",
+        "habitat": "hot_spring",
+        "temperature_c": 75,
+        "ph": 7.5,
+        "salinity_psu": 3,
+        "sulfur_rich": 0.55,
+        "iron_rich": 0.45,
+        "radiation_index": 0.2,
+        "function_label": 5,
+    },
+    {
+        "organism": "Halobacterium salinarum",
+        "habitat": "hypersaline_lake",
+        "temperature_c": 42,
+        "ph": 7.2,
+        "salinity_psu": 260,
+        "sulfur_rich": 0.35,
+        "iron_rich": 0.30,
+        "radiation_index": 0.4,
+        "function_label": 4,
+    },
+    {
+        "organism": "Acidithiobacillus ferrooxidans",
+        "habitat": "acid_mine_drainage",
+        "temperature_c": 35,
+        "ph": 2.0,
+        "salinity_psu": 8,
+        "sulfur_rich": 0.90,
+        "iron_rich": 0.95,
+        "radiation_index": 0.3,
+        "function_label": 7,
+    },
+    {
+        "organism": "Deinococcus radiodurans",
+        "habitat": "radiation_exposed_soil",
+        "temperature_c": 32,
+        "ph": 7.0,
+        "salinity_psu": 1,
+        "sulfur_rich": 0.25,
+        "iron_rich": 0.25,
+        "radiation_index": 0.95,
+        "function_label": 3,
+    },
+]
