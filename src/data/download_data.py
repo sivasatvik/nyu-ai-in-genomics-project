@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -17,9 +18,27 @@ NASA_EXO_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
 
 
 def safe_get(url: str, params: dict | None = None, timeout: int = 60):
-    r = requests.get(url, params=params, timeout=timeout)
-    r.raise_for_status()
-    return r
+    last_exc: Exception | None = None
+    for attempt in range(1, 5):
+        try:
+            r = requests.get(
+                url,
+                params=params,
+                timeout=timeout,
+                headers={"User-Agent": "nyu-ai-in-genomics/1.0"},
+            )
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt == 4:
+                break
+            wait_seconds = 2 * attempt
+            print(f"[download] retrying {url} after {type(exc).__name__}: {exc} (attempt {attempt}/4)")
+            time.sleep(wait_seconds)
+
+    assert last_exc is not None
+    raise last_exc
 
 
 def download_uniprot(out_dir: Path, max_records: int = 5000) -> Path:

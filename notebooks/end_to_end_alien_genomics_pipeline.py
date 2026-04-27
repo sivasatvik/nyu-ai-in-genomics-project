@@ -140,10 +140,30 @@ def derive_env_vector_from_extremophile_meta(meta):
 # ## 4) Download data
 
 # %%
-def safe_get(url, params=None, timeout=60):
-    r = requests.get(url, params=params, timeout=timeout)
-    r.raise_for_status()
-    return r
+import time
+
+def safe_get(url, params=None, timeout=60, attempts=4, backoff=2):
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            r = requests.get(
+                url,
+                params=params,
+                timeout=timeout,
+                headers={"User-Agent": "nyu-ai-in-genomics/1.0"},
+            )
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt == attempts:
+                break
+            wait_seconds = backoff * attempt
+            print(f"[download] retrying {url} after {type(exc).__name__}: {exc} (attempt {attempt}/{attempts})", flush=True)
+            time.sleep(wait_seconds)
+
+    if last_exc is not None:
+        raise last_exc
 
 def download_all(cfg):
     out_dir = Path(cfg["raw_dir"])
@@ -183,6 +203,8 @@ def download_all(cfg):
     with ext_path.open("w", encoding="utf-8") as f:
         for r in records: f.write(json.dumps(r)+"\n")
     print("[download] wrote extremophile_sequences.jsonl with", len(records), "records", flush=True)
+
+    return
 
 download_all(CFG)
 
