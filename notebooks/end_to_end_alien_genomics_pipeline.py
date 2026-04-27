@@ -35,7 +35,7 @@ torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-print("device:", DEVICE)
+print("[setup] imports ready, random seeds set, device:", DEVICE, flush=True)
 
 # %% [markdown]
 # ## 2) Config
@@ -65,6 +65,8 @@ CFG = {
 
 for p in [CFG["raw_dir"], CFG["processed_dir"], CFG["output_dir"]]:
     Path(p).mkdir(parents=True, exist_ok=True)
+
+print("[config] directories are ready:", CFG["raw_dir"], CFG["processed_dir"], CFG["output_dir"], flush=True)
 
 UNIPROT_URL = "https://rest.uniprot.org/uniprotkb/stream"
 NASA_EXO_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
@@ -145,17 +147,20 @@ def safe_get(url, params=None, timeout=60):
 
 def download_all(cfg):
     out_dir = Path(cfg["raw_dir"])
+    print("[download] starting raw data fetch", flush=True)
     try:
         params = {"query":"reviewed:true","format":"tsv","fields":"accession,sequence,protein_name,organism_name","size":cfg["max_records"]}
         (out_dir / "uniprot_sample.tsv").write_text(safe_get(UNIPROT_URL, params=params).text, encoding="utf-8")
+        print("[download] wrote uniprot_sample.tsv", flush=True)
     except Exception as e:
-        print("[warn] uniprot sample failed", e)
+        print("[warn] uniprot sample failed", e, flush=True)
 
     try:
         query = f"select top {cfg['max_records']} pl_name,st_teff,st_met,st_mass,pl_orbper,pl_rade from pscomppars"
         (out_dir / "nasa_exoplanets.csv").write_text(safe_get(NASA_EXO_URL, params={"query":query,"format":"csv"}).text, encoding="utf-8")
+        print("[download] wrote nasa_exoplanets.csv", flush=True)
     except Exception as e:
-        print("[warn] nasa exoplanets failed", e)
+        print("[warn] nasa exoplanets failed", e, flush=True)
 
     ext_path = out_dir / "extremophile_sequences.jsonl"
     records=[]
@@ -171,11 +176,13 @@ def download_all(cfg):
             pass
 
     if not records:
+        print("[download] no extremophile rows returned, using fallback records", flush=True)
         for i,item in enumerate(EXTREMOPHILE_CATALOG):
             records.append({"accession":f"fallback_{i}","sequence":"M"*60+"G"*40,"protein_name":"fallback","organism_name":item["organism"],"habitat":item["habitat"],"env_vector":derive_env_vector_from_extremophile_meta(item),"function_label":item["function_label"]})
 
     with ext_path.open("w", encoding="utf-8") as f:
         for r in records: f.write(json.dumps(r)+"\n")
+    print("[download] wrote extremophile_sequences.jsonl with", len(records), "records", flush=True)
 
 download_all(CFG)
 
@@ -199,6 +206,7 @@ def build_datasets(cfg):
     out_train=Path(cfg["processed_dir"]) / "dataset.jsonl"
     out_eval=Path(cfg["processed_dir"]) / "extremophile_eval.jsonl"
 
+    print("[build] starting dataset construction", flush=True)
     exo_path = raw_dir / "nasa_exoplanets.csv"
     exo_df = pd.read_csv(exo_path) if exo_path.exists() else pd.DataFrame([{} for _ in range(cfg["n_simulated"])])
 
@@ -228,7 +236,7 @@ def build_datasets(cfg):
     with out_eval.open("w", encoding="utf-8") as f:
         for r in ext_eval: f.write(json.dumps(r)+"\n")
 
-    print("train:", len(records), "ext_eval:", len(ext_eval))
+    print("[build] train records:", len(records), "ext_eval records:", len(ext_eval), flush=True)
 
 build_datasets(CFG)
 
@@ -280,7 +288,9 @@ def load_jsonl(path):
         for line in f: out.append(json.loads(line))
     return out
 
+print("[train] loading dataset jsonl", flush=True)
 rows=load_jsonl(str(Path(CFG["processed_dir"])/"dataset.jsonl"))
+print("[train] loaded rows:", len(rows), flush=True)
 train_rows,temp_rows=train_test_split(rows,test_size=0.2,random_state=SEED)
 val_rows,test_rows=train_test_split(temp_rows,test_size=0.5,random_state=SEED)
 
@@ -304,19 +314,22 @@ def run_epoch(loader, training=True):
     return total/max(1,len(loader)), corr/max(1,den)
 
 best=float("inf")
+print("[train] starting training for", CFG["num_epochs"], "epochs", flush=True)
 for ep in range(CFG["num_epochs"]):
+    print(f"[train] epoch {ep + 1}/{CFG['num_epochs']} starting", flush=True)
     trl,tra = run_epoch(train_loader,True)
     with torch.no_grad(): val,vala = run_epoch(val_loader,False)
-    print(ep+1, trl, val, vala)
-    if val<best: best=val; torch.save(model.state_dict(), str(Path(CFG["output_dir"])/"best_model.pt"))
+    print(ep+1, trl, val, vala, flush=True)
+    if val<best: best=val; torch.save(model.state_dict(), str(Path(CFG["output_dir"])/"best_model.pt")); print("[train] saved new best checkpoint", flush=True)
 
 # %% [markdown]
 # ## 8) Extremophile eval
 
 # %%
 ext=load_jsonl(str(Path(CFG["processed_dir"])/"extremophile_eval.jsonl"))
-if not ext: print("no extremophile eval rows")
+if not ext: print("[eval] no extremophile eval rows", flush=True)
 else:
+    print("[eval] loading best checkpoint", flush=True)
     model.load_state_dict(torch.load(str(Path(CFG["output_dir"])/"best_model.pt"), map_location=DEVICE))
     loader=DataLoader(EnvSequenceDataset(ext,tok,CFG["max_sequence_len"]),batch_size=CFG["batch_size"],shuffle=False)
     model.eval(); lm=[]; fl=[]; c=0; n=0
@@ -327,13 +340,14 @@ else:
             lm.append(ce(logits.reshape(-1,logits.size(-1)), y.reshape(-1)).item())
             fl.append(clf(fn_logits,fn).item())
             c += (fn_logits.argmax(-1)==fn).sum().item(); n += fn.size(0)
-    print(json.dumps({"extremophile_lm_loss":float(sum(lm)/max(1,len(lm))),"extremophile_function_loss":float(sum(fl)/max(1,len(fl))),"extremophile_function_acc":float(c/max(1,n)),"n_eval_samples":n}, indent=2))
+    print(json.dumps({"extremophile_lm_loss":float(sum(lm)/max(1,len(lm))),"extremophile_function_loss":float(sum(fl)/max(1,len(fl))),"extremophile_function_acc":float(c/max(1,n)),"n_eval_samples":n}, indent=2), flush=True)
 
 # %% [markdown]
 # ## 9) Sample alien condition
 
 # %%
 def sample_sequence(env,max_len=256,temperature=1.0):
+    print("[sample] generating sequence", flush=True)
     model.eval(); t=torch.tensor([[tok.bos_id]],dtype=torch.long,device=DEVICE); env_t=torch.tensor([env],dtype=torch.float32,device=DEVICE)
     with torch.no_grad():
         for _ in range(max_len-1):
@@ -342,10 +356,11 @@ def sample_sequence(env,max_len=256,temperature=1.0):
             nxt=torch.multinomial(probs,1); t=torch.cat([t,nxt],dim=1)
             if nxt.item()==tok.eos_id: break
     seq=''.join(tok.itos[i] for i in t[0].tolist() if i>=3)
+    print("[sample] generation complete, length:", len(seq), flush=True)
     return seq, int(fn_logits.argmax(-1).item())
 
 env=[0.7,0.5,0.6,0.8,0.4,0.3,0.9,0.4,0.2,0.5]
 seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"])
-print(json.dumps({"environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2))
+print(json.dumps({"environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 

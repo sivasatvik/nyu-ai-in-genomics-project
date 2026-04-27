@@ -23,10 +23,12 @@ def load_inference_artifacts(config_path: str, model_path: str):
         **cfg["model"],
     ).to(device)
 
+    model_loaded = False
     if Path(model_path).exists():
         model.load_state_dict(torch.load(model_path, map_location=device))
+        model_loaded = True
     model.eval()
-    return cfg, tokenizer, model, device
+    return cfg, tokenizer, model, device, model_loaded
 
 
 def sample_sequence(model, tokenizer, env, max_len: int, device: str, temperature: float):
@@ -57,8 +59,13 @@ def main():
     model_path = st.sidebar.text_input("Model checkpoint", value="outputs/best_model.pt")
     temperature = st.sidebar.slider("Sampling temperature", min_value=0.1, max_value=2.0, value=1.0, step=0.1)
 
-    cfg, tokenizer, model, device = load_inference_artifacts(config_path, model_path)
+    cfg, tokenizer, model, device, model_loaded = load_inference_artifacts(config_path, model_path)
     st.sidebar.write(f"Device: `{device}`")
+
+    if not model_loaded:
+        st.sidebar.error(f"Model checkpoint not found: {model_path}")
+        st.error("Checkpoint missing. Train the model first or provide a valid checkpoint path.")
+        st.stop()
 
     st.subheader("Environment Conditions")
     env_features = cfg["data"]["env_feature_columns"]
