@@ -8,7 +8,7 @@
 
 # %%
 # Uncomment if needed
-# !pip install torch transformers pandas numpy scikit-learn requests tqdm pyyaml
+!pip install torch transformers pandas numpy scikit-learn requests tqdm pyyaml
 
 import json, math, random
 from pathlib import Path
@@ -45,13 +45,13 @@ CFG = {
     "raw_dir": "data/raw",
     "processed_dir": "data/processed",
     "output_dir": "outputs",
-    "max_records": 5000,
+    "max_records": 20000,
     "extremophile_per_organism": 60,
     "n_simulated": 2000,
     "extreme_holdout_fraction": 0.2,
     "max_sequence_len": 256,
     "batch_size": 16,
-    "num_epochs": 1000,
+    "num_epochs": 100,
     "lr": 3e-4,
     "weight_decay": 1e-4,
     "d_model": 128,
