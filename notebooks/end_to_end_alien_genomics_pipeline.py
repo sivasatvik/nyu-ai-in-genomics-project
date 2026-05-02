@@ -55,6 +55,7 @@ CFG = {
     "extremophile_per_organism": 60,
     "n_simulated": 2000,
     "extreme_holdout_fraction": 0.2,
+    "min_sequence_len": 128,
     "max_sequence_len": 256,
     "batch_size": 16,
     "num_epochs": 100,
@@ -494,7 +495,7 @@ def apply_top_p(probs, p=0.9):
     probs_filtered[indices_to_remove] = 0.0
     return probs_filtered / probs_filtered.sum(dim=-1, keepdim=True)
 
-def sample_sequence(env, max_len=256, temperature=1.0, top_k=None, top_p=None):
+def sample_sequence(env, min_len=80, max_len=256, temperature=1.0, top_k=None, top_p=None):
     """
     Generate amino acid sequence with optional top-k or top-p sampling.
     Args:
@@ -515,6 +516,13 @@ def sample_sequence(env, max_len=256, temperature=1.0, top_k=None, top_p=None):
             if top_k is not None and top_k > 0:
                 logits_scaled = apply_top_k(logits_scaled, k=top_k)
             
+            # avoid trivial early-stop/invalid specials\n",
+                logits_scaled[:, tok.pad_id] = float("-inf")
+                logits_scaled[:, tok.bos_id] = float("-inf")
+                if t.size(1) - 1 < min_len:
+                    logits_scaled[:, tok.eos_id] = float("-inf")
+    
+
             probs = torch.softmax(logits_scaled, dim=-1)
             
             # Apply top-p filtering if specified
@@ -530,22 +538,22 @@ def sample_sequence(env, max_len=256, temperature=1.0, top_k=None, top_p=None):
 # Example 1: vanilla sampling (baseline)
 print("\n[example] Sampling with vanilla temperature strategy", flush=True)
 env=[0.7,0.5,0.6,0.8,0.4,0.3,0.9,0.4,0.2,0.5]
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.0)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.0)
 print(json.dumps({"strategy":"vanilla_temp_1.0","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 # Example 2: higher temperature for diversity
 print("\n[example] Sampling with higher temperature (1.5)", flush=True)
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.5)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.5)
 print(json.dumps({"strategy":"higher_temp_1.5","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 # Example 3: top-k sampling (keep top 50 tokens)
 print("\n[example] Sampling with top-k=50", flush=True)
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.0, top_k=50)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.0, top_k=50)
 print(json.dumps({"strategy":"top_k_50","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 # Example 4: top-p (nucleus) sampling with p=0.9
 print("\n[example] Sampling with top-p=0.9", flush=True)
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.0, top_p=0.9)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.0, top_p=0.9)
 print(json.dumps({"strategy":"top_p_0.9","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 
