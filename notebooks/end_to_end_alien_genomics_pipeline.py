@@ -22,6 +22,12 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+try:
+    from transformers import AutoTokenizer, AutoModel
+except Exception:
+    AutoTokenizer = None
+    AutoModel = None
+
 import sys
 # Force line-buffered stdout so print statements appear immediately in sbatch /
 # Singularity logs rather than being flushed only at script exit.
@@ -61,6 +67,10 @@ CFG = {
     "dropout": 0.1,
     "function_classes": 8,
     "env_dim": 10,
+    "use_esm2": True,
+    "esm2_model_name": "facebook/esm2_t6_8M_UR50D",
+    "freeze_esm2": True,
+    "esm2_batch_tokens": 1024,
 }
 
 for p in [CFG["raw_dir"], CFG["processed_dir"], CFG["output_dir"]]:
@@ -343,9 +353,57 @@ class EnvConditionedGenerator(nn.Module):
         super().__init__(); self.token_emb=nn.Embedding(vocab_size,d_model); self.env_proj=nn.Linear(env_dim,d_model); self.pos=PositionalEncoding(d_model,max_len)
         layer=nn.TransformerEncoderLayer(d_model=d_model,nhead=nhead,dim_feedforward=dim_feedforward,dropout=dropout,batch_first=True)
         self.decoder=nn.TransformerEncoder(layer,num_layers=num_layers); self.lm_head=nn.Linear(d_model,vocab_size)
-        self.function_head=nn.Sequential(nn.Linear(d_model,d_model),nn.ReLU(),nn.Dropout(dropout),nn.Linear(d_model,function_classes))
+        self.fn_head=nn.Sequential(nn.Linear(d_model,d_model),nn.ReLU(),nn.Dropout(dropout),nn.Linear(d_model,function_classes))
     def forward(self,tokens,env):
-        h=self.token_emb(tokens)+self.env_proj(env).unsqueeze(1); h=self.decoder(self.pos(h)); return self.lm_head(h), self.function_head(h.mean(dim=1))
+        h=self.pos(self.token_emb(tokens)+self.env_proj(env).unsqueeze(1)); h=self.decoder(h)
+        return self.lm_head(h), self.fn_head(h.mean(dim=1))
+
+class ESM2ConditionedGenerator(nn.Module):
+    def __init__(self,vocab_size,env_dim,esm2_model_name,d_model,nhead,num_layers,dim_feedforward,dropout,function_classes,freeze_esm2=True):
+        super().__init__()
+        if AutoTokenizer is None or AutoModel is None:
+            raise ImportError("transformers is required for ESM2 backend")
+        self.esm_tokenizer=AutoTokenizer.from_pretrained(esm2_model_name)
+        self.esm_model=AutoModel.from_pretrained(esm2_model_name)
+        self.esm_dim=self.esm_model.config.hidden_size
+        if freeze_esm2:
+            for p in self.esm_model.parameters(): p.requires_grad=False
+        self.env_proj=nn.Linear(env_dim,self.esm_dim)
+        layer=nn.TransformerEncoderLayer(d_model=self.esm_dim,nhead=nhead,dim_feedforward=dim_feedforward,dropout=dropout,batch_first=True)
+        self.decoder=nn.TransformerEncoder(layer,num_layers=num_layers)
+        self.lm_head=nn.Linear(self.esm_dim,vocab_size)
+        self.fn_head=nn.Sequential(nn.Linear(self.esm_dim,d_model),nn.ReLU(),nn.Dropout(dropout),nn.Linear(d_model,function_classes))
+
+    def _decode_to_strings(self,tokens,tok):
+        seqs=[]
+        for row in tokens.tolist():
+            aa=[tok.itos[i] for i in row if i>=3]
+            seq="".join(ch for ch in aa if len(ch)==1)
+            seqs.append(seq if len(seq)>0 else "A")
+        return seqs
+
+    def forward(self,tokens,env,tok=None):
+        if tok is None:
+            raise ValueError("tok must be provided for ESM2ConditionedGenerator.forward")
+        seqs=self._decode_to_strings(tokens,tok)
+        esm_batch=self.esm_tokenizer(seqs,return_tensors="pt",padding=True,truncation=True,max_length=tokens.size(1))
+        esm_batch={k:v.to(tokens.device) for k,v in esm_batch.items()}
+        hidden=self.esm_model(**esm_batch).last_hidden_state
+        if hidden.size(1)<tokens.size(1):
+            pad=torch.zeros(hidden.size(0),tokens.size(1)-hidden.size(1),hidden.size(2),device=hidden.device)
+            hidden=torch.cat([hidden,pad],dim=1)
+        h=hidden[:,:tokens.size(1),:] + self.env_proj(env).unsqueeze(1)
+        h=self.decoder(h)
+        return self.lm_head(h), self.fn_head(h.mean(dim=1))
+
+
+def build_model(cfg, tok):
+    if cfg.get("use_esm2", False):
+        print(f"[model] using ESM2 backend: {cfg['esm2_model_name']}", flush=True)
+        return ESM2ConditionedGenerator(vocab_size=tok.vocab_size, env_dim=cfg["env_dim"], esm2_model_name=cfg["esm2_model_name"], d_model=cfg["d_model"], nhead=cfg["nhead"], num_layers=cfg["num_layers"], dim_feedforward=cfg["dim_feedforward"], dropout=cfg["dropout"], function_classes=cfg["function_classes"], freeze_esm2=cfg.get("freeze_esm2", True))
+    print("[model] using baseline transformer backend", flush=True)
+    return EnvConditionedGenerator(vocab_size=tok.vocab_size, env_dim=cfg["env_dim"], d_model=cfg["d_model"], nhead=cfg["nhead"], num_layers=cfg["num_layers"], dim_feedforward=cfg["dim_feedforward"], dropout=cfg["dropout"], max_len=cfg["max_sequence_len"], function_classes=cfg["function_classes"])
+
 
 # %% [markdown]
 # ## 7) Train
@@ -367,7 +425,7 @@ tok=SequenceTokenizer()
 train_loader=DataLoader(EnvSequenceDataset(train_rows,tok,CFG["max_sequence_len"]),batch_size=CFG["batch_size"],shuffle=True)
 val_loader=DataLoader(EnvSequenceDataset(val_rows,tok,CFG["max_sequence_len"]),batch_size=CFG["batch_size"],shuffle=False)
 
-model=EnvConditionedGenerator(vocab_size=tok.vocab_size, env_dim=CFG["env_dim"], d_model=CFG["d_model"], nhead=CFG["nhead"], num_layers=CFG["num_layers"], dim_feedforward=CFG["dim_feedforward"], dropout=CFG["dropout"], max_len=CFG["max_sequence_len"], function_classes=CFG["function_classes"]).to(DEVICE)
+model=build_model(CFG, tok).to(DEVICE)
 opt=torch.optim.AdamW(model.parameters(),lr=CFG["lr"],weight_decay=CFG["weight_decay"])
 ce=nn.CrossEntropyLoss(ignore_index=tok.pad_id); clf=nn.CrossEntropyLoss()
 
@@ -375,7 +433,7 @@ def run_epoch(loader, training=True):
     model.train(training); total=0.0; corr=0; den=0
     for b in tqdm(loader, leave=False):
         x=b["x"].to(DEVICE); y=b["y"].to(DEVICE); env=b["env"].to(DEVICE); fn=b["fn_label"].to(DEVICE)
-        logits, fn_logits = model(x, env)
+        logits, fn_logits = model(x, env, tok) if CFG.get("use_esm2", False) else model(x, env)
         loss = ce(logits.reshape(-1, logits.size(-1)), y.reshape(-1)) + 0.3*clf(fn_logits, fn)
         if training:
             opt.zero_grad(); loss.backward(); nn.utils.clip_grad_norm_(model.parameters(),1.0); opt.step()
@@ -405,7 +463,7 @@ else:
     with torch.no_grad():
         for b in loader:
             x=b["x"].to(DEVICE); y=b["y"].to(DEVICE); env=b["env"].to(DEVICE); fn=b["fn_label"].to(DEVICE)
-            logits, fn_logits=model(x,env)
+            logits, fn_logits=(model(x, env, tok) if CFG.get("use_esm2", False) else model(x, env))
             lm.append(ce(logits.reshape(-1,logits.size(-1)), y.reshape(-1)).item())
             fl.append(clf(fn_logits,fn).item())
             c += (fn_logits.argmax(-1)==fn).sum().item(); n += fn.size(0)
@@ -450,7 +508,7 @@ def sample_sequence(env, max_len=256, temperature=1.0, top_k=None, top_p=None):
     model.eval(); t=torch.tensor([[tok.bos_id]],dtype=torch.long,device=DEVICE); env_t=torch.tensor([env],dtype=torch.float32,device=DEVICE)
     with torch.no_grad():
         for _ in range(max_len-1):
-            logits, fn_logits = model(t, env_t)
+            logits, fn_logits = (model(t, env_t, tok) if CFG.get("use_esm2", False) else model(t, env_t))
             logits_scaled = logits[:,-1,:]/max(temperature,1e-5)
             
             # Apply top-k filtering if specified
