@@ -485,16 +485,24 @@ def apply_top_k(logits, k=50):
     logits_filtered[logits_filtered < min_val] = float('-inf')
     return logits_filtered
 
+
 def apply_top_p(probs, p=0.9):
     """Keep tokens until cumulative probability >= p (nucleus sampling)."""
     sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
     cumsum = torch.cumsum(sorted_probs, dim=-1)
     sorted_indices_to_remove = cumsum > p
     sorted_indices_to_remove[..., 0] = False  # keep at least one token
-    indices_to_remove = sorted_indices[sorted_indices_to_remove]
-    probs_filtered = probs.clone()
-    probs_filtered[indices_to_remove] = 0.0
-    return probs_filtered / probs_filtered.sum(dim=-1, keepdim=True)
+
+    probs_filtered = torch.zeros_like(probs)
+    keep_mask = ~sorted_indices_to_remove
+    probs_filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_probs * keep_mask.to(sorted_probs.dtype))
+    denom = probs_filtered.sum(dim=-1, keepdim=True)
+    if torch.any(denom <= 0):
+        fallback = torch.zeros_like(probs)
+        fallback.scatter_(dim=-1, index=sorted_indices[..., :1], src=torch.ones_like(sorted_probs[..., :1]))
+        return fallback
+    return probs_filtered / denom.clamp_min(1e-8)
+
 
 def sample_sequence(env, min_len=80, max_len=256, temperature=1.0, top_k=None, top_p=None):
     """
@@ -512,24 +520,35 @@ def sample_sequence(env, min_len=80, max_len=256, temperature=1.0, top_k=None, t
         for _ in range(max_len-1):
             logits, fn_logits = (model(t, env_t, tok) if CFG.get("use_esm2", False) else model(t, env_t))
             logits_scaled = logits[:,-1,:]/max(temperature,1e-5)
-            
+
             # Apply top-k filtering if specified
             if top_k is not None and top_k > 0:
                 logits_scaled = apply_top_k(logits_scaled, k=top_k)
-            
-            # avoid trivial early-stop/invalid specials\n",
-                logits_scaled[:, tok.pad_id] = float("-inf")
-                logits_scaled[:, tok.bos_id] = float("-inf")
-                if t.size(1) - 1 < min_len:
-                    logits_scaled[:, tok.eos_id] = float("-inf")
-    
+
+            # avoid trivial early-stop/invalid specials
+            logits_scaled[:, tok.pad_id] = float("-inf")
+            logits_scaled[:, tok.bos_id] = float("-inf")
+            if t.size(1) - 1 < min_len:
+                logits_scaled[:, tok.eos_id] = float("-inf")
 
             probs = torch.softmax(logits_scaled, dim=-1)
-            
+
             # Apply top-p filtering if specified
             if top_p is not None and 0 < top_p < 1.0:
                 probs = apply_top_p(probs, p=top_p)
-            
+            probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
+            probs_sum = probs.sum(dim=-1, keepdim=True)
+            if torch.any(probs_sum <= 0):
+                valid = torch.isfinite(logits_scaled)
+                if torch.any(valid):
+                    probs = valid.to(dtype=probs.dtype)
+                    probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+                else:
+                    probs = torch.zeros_like(probs)
+                    probs[:, tok.eos_id] = 1.0
+            else:
+                probs = probs / probs_sum.clamp_min(1e-8)
+
             nxt=torch.multinomial(probs,1); t=torch.cat([t,nxt],dim=1)
             if nxt.item()==tok.eos_id: break
     seq=''.join(tok.itos[i] for i in t[0].tolist() if i>=3)

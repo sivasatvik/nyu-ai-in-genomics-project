@@ -50,10 +50,15 @@ def apply_top_p(probs: torch.Tensor, p: float | None):
     sorted_indices_to_remove = cumsum > p
     sorted_indices_to_remove[..., 0] = False
 
-    probs_filtered = probs.clone()
-    probs_filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_probs * (~sorted_indices_to_remove).to(sorted_probs.dtype))
-    denom = probs_filtered.sum(dim=-1, keepdim=True).clamp_min(1e-8)
-    return probs_filtered / denom
+    probs_filtered = torch.zeros_like(probs)
+    keep_mask = ~sorted_indices_to_remove
+    probs_filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_probs * keep_mask.to(sorted_probs.dtype))
+    denom = probs_filtered.sum(dim=-1, keepdim=True)
+    if torch.any(denom <= 0):
+        fallback = torch.zeros_like(probs)
+        fallback.scatter_(dim=-1, index=sorted_indices[..., :1], src=torch.ones_like(sorted_probs[..., :1]))
+        return fallback
+    return probs_filtered / denom.clamp_min(1e-8)
 
 
 def sample_sequence(
@@ -79,6 +84,18 @@ def sample_sequence(
                 next_logits[:, tokenizer.eos_id] = float("-inf")
             probs = torch.softmax(next_logits, dim=-1)
             probs = apply_top_p(probs, top_p)
+            probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
+            probs_sum = probs.sum(dim=-1, keepdim=True)
+            if torch.any(probs_sum <= 0):
+                valid = torch.isfinite(next_logits)
+                if torch.any(valid):
+                    probs = valid.to(dtype=probs.dtype)
+                    probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+                else:
+                    probs = torch.zeros_like(probs)
+                    probs[:, tokenizer.eos_id] = 1.0
+            else:
+                probs = probs / probs_sum.clamp_min(1e-8)
             next_id = torch.multinomial(probs, num_samples=1)
             tokens = torch.cat([tokens, next_id], dim=1)
             if next_id.item() == tokenizer.eos_id:
