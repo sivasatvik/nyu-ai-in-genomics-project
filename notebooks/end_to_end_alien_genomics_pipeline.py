@@ -22,6 +22,12 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+try:
+    from transformers import AutoTokenizer, AutoModel
+except Exception:
+    AutoTokenizer = None
+    AutoModel = None
+
 import sys
 # Force line-buffered stdout so print statements appear immediately in sbatch /
 # Singularity logs rather than being flushed only at script exit.
@@ -49,6 +55,7 @@ CFG = {
     "extremophile_per_organism": 60,
     "n_simulated": 2000,
     "extreme_holdout_fraction": 0.2,
+    "min_sequence_len": 128,
     "max_sequence_len": 256,
     "batch_size": 16,
     "num_epochs": 100,
@@ -61,6 +68,10 @@ CFG = {
     "dropout": 0.1,
     "function_classes": 8,
     "env_dim": 10,
+    "use_esm2": True,
+    "esm2_model_name": "facebook/esm2_t6_8M_UR50D",
+    "freeze_esm2": True,
+    "esm2_batch_tokens": 1024,
 }
 
 for p in [CFG["raw_dir"], CFG["processed_dir"], CFG["output_dir"]]:
@@ -343,9 +354,57 @@ class EnvConditionedGenerator(nn.Module):
         super().__init__(); self.token_emb=nn.Embedding(vocab_size,d_model); self.env_proj=nn.Linear(env_dim,d_model); self.pos=PositionalEncoding(d_model,max_len)
         layer=nn.TransformerEncoderLayer(d_model=d_model,nhead=nhead,dim_feedforward=dim_feedforward,dropout=dropout,batch_first=True)
         self.decoder=nn.TransformerEncoder(layer,num_layers=num_layers); self.lm_head=nn.Linear(d_model,vocab_size)
-        self.function_head=nn.Sequential(nn.Linear(d_model,d_model),nn.ReLU(),nn.Dropout(dropout),nn.Linear(d_model,function_classes))
+        self.fn_head=nn.Sequential(nn.Linear(d_model,d_model),nn.ReLU(),nn.Dropout(dropout),nn.Linear(d_model,function_classes))
     def forward(self,tokens,env):
-        h=self.token_emb(tokens)+self.env_proj(env).unsqueeze(1); h=self.decoder(self.pos(h)); return self.lm_head(h), self.function_head(h.mean(dim=1))
+        h=self.pos(self.token_emb(tokens)+self.env_proj(env).unsqueeze(1)); h=self.decoder(h)
+        return self.lm_head(h), self.fn_head(h.mean(dim=1))
+
+class ESM2ConditionedGenerator(nn.Module):
+    def __init__(self,vocab_size,env_dim,esm2_model_name,d_model,nhead,num_layers,dim_feedforward,dropout,function_classes,freeze_esm2=True):
+        super().__init__()
+        if AutoTokenizer is None or AutoModel is None:
+            raise ImportError("transformers is required for ESM2 backend")
+        self.esm_tokenizer=AutoTokenizer.from_pretrained(esm2_model_name)
+        self.esm_model=AutoModel.from_pretrained(esm2_model_name)
+        self.esm_dim=self.esm_model.config.hidden_size
+        if freeze_esm2:
+            for p in self.esm_model.parameters(): p.requires_grad=False
+        self.env_proj=nn.Linear(env_dim,self.esm_dim)
+        layer=nn.TransformerEncoderLayer(d_model=self.esm_dim,nhead=nhead,dim_feedforward=dim_feedforward,dropout=dropout,batch_first=True)
+        self.decoder=nn.TransformerEncoder(layer,num_layers=num_layers)
+        self.lm_head=nn.Linear(self.esm_dim,vocab_size)
+        self.fn_head=nn.Sequential(nn.Linear(self.esm_dim,d_model),nn.ReLU(),nn.Dropout(dropout),nn.Linear(d_model,function_classes))
+
+    def _decode_to_strings(self,tokens,tok):
+        seqs=[]
+        for row in tokens.tolist():
+            aa=[tok.itos[i] for i in row if i>=3]
+            seq="".join(ch for ch in aa if len(ch)==1)
+            seqs.append(seq if len(seq)>0 else "A")
+        return seqs
+
+    def forward(self,tokens,env,tok=None):
+        if tok is None:
+            raise ValueError("tok must be provided for ESM2ConditionedGenerator.forward")
+        seqs=self._decode_to_strings(tokens,tok)
+        esm_batch=self.esm_tokenizer(seqs,return_tensors="pt",padding=True,truncation=True,max_length=tokens.size(1))
+        esm_batch={k:v.to(tokens.device) for k,v in esm_batch.items()}
+        hidden=self.esm_model(**esm_batch).last_hidden_state
+        if hidden.size(1)<tokens.size(1):
+            pad=torch.zeros(hidden.size(0),tokens.size(1)-hidden.size(1),hidden.size(2),device=hidden.device)
+            hidden=torch.cat([hidden,pad],dim=1)
+        h=hidden[:,:tokens.size(1),:] + self.env_proj(env).unsqueeze(1)
+        h=self.decoder(h)
+        return self.lm_head(h), self.fn_head(h.mean(dim=1))
+
+
+def build_model(cfg, tok):
+    if cfg.get("use_esm2", False):
+        print(f"[model] using ESM2 backend: {cfg['esm2_model_name']}", flush=True)
+        return ESM2ConditionedGenerator(vocab_size=tok.vocab_size, env_dim=cfg["env_dim"], esm2_model_name=cfg["esm2_model_name"], d_model=cfg["d_model"], nhead=cfg["nhead"], num_layers=cfg["num_layers"], dim_feedforward=cfg["dim_feedforward"], dropout=cfg["dropout"], function_classes=cfg["function_classes"], freeze_esm2=cfg.get("freeze_esm2", True))
+    print("[model] using baseline transformer backend", flush=True)
+    return EnvConditionedGenerator(vocab_size=tok.vocab_size, env_dim=cfg["env_dim"], d_model=cfg["d_model"], nhead=cfg["nhead"], num_layers=cfg["num_layers"], dim_feedforward=cfg["dim_feedforward"], dropout=cfg["dropout"], max_len=cfg["max_sequence_len"], function_classes=cfg["function_classes"])
+
 
 # %% [markdown]
 # ## 7) Train
@@ -367,7 +426,7 @@ tok=SequenceTokenizer()
 train_loader=DataLoader(EnvSequenceDataset(train_rows,tok,CFG["max_sequence_len"]),batch_size=CFG["batch_size"],shuffle=True)
 val_loader=DataLoader(EnvSequenceDataset(val_rows,tok,CFG["max_sequence_len"]),batch_size=CFG["batch_size"],shuffle=False)
 
-model=EnvConditionedGenerator(vocab_size=tok.vocab_size, env_dim=CFG["env_dim"], d_model=CFG["d_model"], nhead=CFG["nhead"], num_layers=CFG["num_layers"], dim_feedforward=CFG["dim_feedforward"], dropout=CFG["dropout"], max_len=CFG["max_sequence_len"], function_classes=CFG["function_classes"]).to(DEVICE)
+model=build_model(CFG, tok).to(DEVICE)
 opt=torch.optim.AdamW(model.parameters(),lr=CFG["lr"],weight_decay=CFG["weight_decay"])
 ce=nn.CrossEntropyLoss(ignore_index=tok.pad_id); clf=nn.CrossEntropyLoss()
 
@@ -375,7 +434,7 @@ def run_epoch(loader, training=True):
     model.train(training); total=0.0; corr=0; den=0
     for b in tqdm(loader, leave=False):
         x=b["x"].to(DEVICE); y=b["y"].to(DEVICE); env=b["env"].to(DEVICE); fn=b["fn_label"].to(DEVICE)
-        logits, fn_logits = model(x, env)
+        logits, fn_logits = model(x, env, tok) if CFG.get("use_esm2", False) else model(x, env)
         loss = ce(logits.reshape(-1, logits.size(-1)), y.reshape(-1)) + 0.3*clf(fn_logits, fn)
         if training:
             opt.zero_grad(); loss.backward(); nn.utils.clip_grad_norm_(model.parameters(),1.0); opt.step()
@@ -390,6 +449,7 @@ for ep in range(CFG["num_epochs"]):
     with torch.no_grad(): val,vala = run_epoch(val_loader,False)
     print(ep+1, trl, val, vala, flush=True)
     if val<best: best=val; torch.save(model.state_dict(), str(Path(CFG["output_dir"])/"best_model.pt")); print("[train] saved new best checkpoint", flush=True)
+torch.save(model.state_dict(), str(Path(CFG["output_dir"])/"final_epoch_model.pt")); print("[train] saved model at final epoch", flush=True)
 
 # %% [markdown]
 # ## 8) Extremophile eval
@@ -405,7 +465,7 @@ else:
     with torch.no_grad():
         for b in loader:
             x=b["x"].to(DEVICE); y=b["y"].to(DEVICE); env=b["env"].to(DEVICE); fn=b["fn_label"].to(DEVICE)
-            logits, fn_logits=model(x,env)
+            logits, fn_logits=(model(x, env, tok) if CFG.get("use_esm2", False) else model(x, env))
             lm.append(ce(logits.reshape(-1,logits.size(-1)), y.reshape(-1)).item())
             fl.append(clf(fn_logits,fn).item())
             c += (fn_logits.argmax(-1)==fn).sum().item(); n += fn.size(0)
@@ -425,18 +485,26 @@ def apply_top_k(logits, k=50):
     logits_filtered[logits_filtered < min_val] = float('-inf')
     return logits_filtered
 
+
 def apply_top_p(probs, p=0.9):
     """Keep tokens until cumulative probability >= p (nucleus sampling)."""
     sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
     cumsum = torch.cumsum(sorted_probs, dim=-1)
     sorted_indices_to_remove = cumsum > p
     sorted_indices_to_remove[..., 0] = False  # keep at least one token
-    indices_to_remove = sorted_indices[sorted_indices_to_remove]
-    probs_filtered = probs.clone()
-    probs_filtered[indices_to_remove] = 0.0
-    return probs_filtered / probs_filtered.sum(dim=-1, keepdim=True)
 
-def sample_sequence(env, max_len=256, temperature=1.0, top_k=None, top_p=None):
+    probs_filtered = torch.zeros_like(probs)
+    keep_mask = ~sorted_indices_to_remove
+    probs_filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_probs * keep_mask.to(sorted_probs.dtype))
+    denom = probs_filtered.sum(dim=-1, keepdim=True)
+    if torch.any(denom <= 0):
+        fallback = torch.zeros_like(probs)
+        fallback.scatter_(dim=-1, index=sorted_indices[..., :1], src=torch.ones_like(sorted_probs[..., :1]))
+        return fallback
+    return probs_filtered / denom.clamp_min(1e-8)
+
+
+def sample_sequence(env, min_len=80, max_len=256, temperature=1.0, top_k=None, top_p=None):
     """
     Generate amino acid sequence with optional top-k or top-p sampling.
     Args:
@@ -450,19 +518,37 @@ def sample_sequence(env, max_len=256, temperature=1.0, top_k=None, top_p=None):
     model.eval(); t=torch.tensor([[tok.bos_id]],dtype=torch.long,device=DEVICE); env_t=torch.tensor([env],dtype=torch.float32,device=DEVICE)
     with torch.no_grad():
         for _ in range(max_len-1):
-            logits, fn_logits = model(t, env_t)
+            logits, fn_logits = (model(t, env_t, tok) if CFG.get("use_esm2", False) else model(t, env_t))
             logits_scaled = logits[:,-1,:]/max(temperature,1e-5)
-            
+
             # Apply top-k filtering if specified
             if top_k is not None and top_k > 0:
                 logits_scaled = apply_top_k(logits_scaled, k=top_k)
-            
+
+            # avoid trivial early-stop/invalid specials
+            logits_scaled[:, tok.pad_id] = float("-inf")
+            logits_scaled[:, tok.bos_id] = float("-inf")
+            if t.size(1) - 1 < min_len:
+                logits_scaled[:, tok.eos_id] = float("-inf")
+
             probs = torch.softmax(logits_scaled, dim=-1)
-            
+
             # Apply top-p filtering if specified
             if top_p is not None and 0 < top_p < 1.0:
                 probs = apply_top_p(probs, p=top_p)
-            
+            probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
+            probs_sum = probs.sum(dim=-1, keepdim=True)
+            if torch.any(probs_sum <= 0):
+                valid = torch.isfinite(logits_scaled)
+                if torch.any(valid):
+                    probs = valid.to(dtype=probs.dtype)
+                    probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+                else:
+                    probs = torch.zeros_like(probs)
+                    probs[:, tok.eos_id] = 1.0
+            else:
+                probs = probs / probs_sum.clamp_min(1e-8)
+
             nxt=torch.multinomial(probs,1); t=torch.cat([t,nxt],dim=1)
             if nxt.item()==tok.eos_id: break
     seq=''.join(tok.itos[i] for i in t[0].tolist() if i>=3)
@@ -472,22 +558,22 @@ def sample_sequence(env, max_len=256, temperature=1.0, top_k=None, top_p=None):
 # Example 1: vanilla sampling (baseline)
 print("\n[example] Sampling with vanilla temperature strategy", flush=True)
 env=[0.7,0.5,0.6,0.8,0.4,0.3,0.9,0.4,0.2,0.5]
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.0)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.0)
 print(json.dumps({"strategy":"vanilla_temp_1.0","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 # Example 2: higher temperature for diversity
 print("\n[example] Sampling with higher temperature (1.5)", flush=True)
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.5)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.5)
 print(json.dumps({"strategy":"higher_temp_1.5","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 # Example 3: top-k sampling (keep top 50 tokens)
 print("\n[example] Sampling with top-k=50", flush=True)
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.0, top_k=50)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.0, top_k=50)
 print(json.dumps({"strategy":"top_k_50","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 # Example 4: top-p (nucleus) sampling with p=0.9
 print("\n[example] Sampling with top-p=0.9", flush=True)
-seq,fn=sample_sequence(env, max_len=CFG["max_sequence_len"], temperature=1.0, top_p=0.9)
+seq,fn=sample_sequence(env, min_len=CFG["min_sequence_len"], max_len=CFG["max_sequence_len"], temperature=1.0, top_p=0.9)
 print(json.dumps({"strategy":"top_p_0.9","environment":env,"generated_sequence":seq[:200],"predicted_function_class":fn}, indent=2), flush=True)
 
 

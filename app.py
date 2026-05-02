@@ -31,14 +31,71 @@ def load_inference_artifacts(config_path: str, model_path: str):
     return cfg, tokenizer, model, device, model_loaded
 
 
-def sample_sequence(model, tokenizer, env, max_len: int, device: str, temperature: float):
+def apply_top_k(logits: torch.Tensor, k: int | None):
+    if k is None or k <= 0 or k >= logits.shape[-1]:
+        return logits
+    top_k_logits, _ = torch.topk(logits, k, dim=-1)
+    min_val = top_k_logits[..., -1:].clone()
+    logits_filtered = logits.clone()
+    logits_filtered[logits_filtered < min_val] = float("-inf")
+    return logits_filtered
+
+
+def apply_top_p(probs: torch.Tensor, p: float | None):
+    if p is None or p <= 0.0 or p >= 1.0:
+        return probs
+
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
+    cumsum = torch.cumsum(sorted_probs, dim=-1)
+    sorted_indices_to_remove = cumsum > p
+    sorted_indices_to_remove[..., 0] = False
+
+    probs_filtered = torch.zeros_like(probs)
+    keep_mask = ~sorted_indices_to_remove
+    probs_filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_probs * keep_mask.to(sorted_probs.dtype))
+    denom = probs_filtered.sum(dim=-1, keepdim=True)
+    if torch.any(denom <= 0):
+        fallback = torch.zeros_like(probs)
+        fallback.scatter_(dim=-1, index=sorted_indices[..., :1], src=torch.ones_like(sorted_probs[..., :1]))
+        return fallback
+    return probs_filtered / denom.clamp_min(1e-8)
+
+
+def sample_sequence(
+    model,
+    tokenizer,
+    env,
+    min_len: int,
+    max_len: int,
+    device: str,
+    temperature: float,
+    top_k: int | None = None,
+    top_p: float | None = None,
+):
     tokens = torch.tensor([[tokenizer.bos_id]], dtype=torch.long, device=device)
     env_t = torch.tensor([env], dtype=torch.float32, device=device)
 
     with torch.no_grad():
         for _ in range(max_len - 1):
             logits, fn_logits = model(tokens, env_t)
-            probs = torch.softmax(logits[:, -1, :] / max(temperature, 1e-5), dim=-1)
+            next_logits = logits[:, -1, :] / max(temperature, 1e-5)
+            next_logits = apply_top_k(next_logits, top_k)
+            if tokens.size(1) - 1 < min_len:
+                next_logits[:, tokenizer.eos_id] = float("-inf")
+            probs = torch.softmax(next_logits, dim=-1)
+            probs = apply_top_p(probs, top_p)
+            probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
+            probs_sum = probs.sum(dim=-1, keepdim=True)
+            if torch.any(probs_sum <= 0):
+                valid = torch.isfinite(next_logits)
+                if torch.any(valid):
+                    probs = valid.to(dtype=probs.dtype)
+                    probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+                else:
+                    probs = torch.zeros_like(probs)
+                    probs[:, tokenizer.eos_id] = 1.0
+            else:
+                probs = probs / probs_sum.clamp_min(1e-8)
             next_id = torch.multinomial(probs, num_samples=1)
             tokens = torch.cat([tokens, next_id], dim=1)
             if next_id.item() == tokenizer.eos_id:
@@ -57,7 +114,16 @@ def main():
 
     config_path = st.sidebar.text_input("Config path", value="config.yaml")
     model_path = st.sidebar.text_input("Model checkpoint", value="outputs/best_model.pt")
+    min_len = st.sidebar.number_input(
+        "Minimum generated length", min_value=1, max_value=5000, value=80, step=1
+    )
     temperature = st.sidebar.slider("Sampling temperature", min_value=0.1, max_value=2.0, value=1.0, step=0.1)
+    top_k = st.sidebar.number_input(
+        "Top-k filtering (0 disables)", min_value=0, max_value=5000, value=0, step=1
+    )
+    top_p = st.sidebar.slider(
+        "Top-p / nucleus filtering (1.0 disables)", min_value=0.0, max_value=1.0, value=1.0, step=0.01
+    )
 
     cfg, tokenizer, model, device, model_loaded = load_inference_artifacts(config_path, model_path)
     st.sidebar.write(f"Device: `{device}`")
@@ -84,14 +150,29 @@ def main():
             model=model,
             tokenizer=tokenizer,
             env=env_values,
+            min_len=int(min_len),
             max_len=cfg["data"]["max_sequence_len"],
             device=device,
             temperature=temperature,
+            top_k=int(top_k) if top_k > 0 else None,
+            top_p=top_p if top_p < 1.0 else None,
         )
         st.success("Sequence generated")
         st.write("**Predicted function class:**", fn_class)
         st.code(seq, language="text")
-        st.json({"env_vector": env_values, "predicted_function_class": fn_class, "sequence_length": len(seq)})
+        st.json(
+            {
+                "env_vector": env_values,
+                "predicted_function_class": fn_class,
+                "sequence_length": len(seq),
+                "sampling": {
+                    "min_len": int(min_len),
+                    "temperature": temperature,
+                    "top_k": int(top_k) if top_k > 0 else None,
+                    "top_p": top_p if top_p < 1.0 else None,
+                },
+            }
+        )
 
     st.markdown("---")
     st.write("Tip: Train first (`python src/train.py ...`) so `outputs/best_model.pt` exists.")
