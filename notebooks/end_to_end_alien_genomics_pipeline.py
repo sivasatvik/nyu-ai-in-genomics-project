@@ -449,6 +449,7 @@ for ep in range(CFG["num_epochs"]):
     with torch.no_grad(): val,vala = run_epoch(val_loader,False)
     print(ep+1, trl, val, vala, flush=True)
     if val<best: best=val; torch.save(model.state_dict(), str(Path(CFG["output_dir"])/"best_model.pt")); print("[train] saved new best checkpoint", flush=True)
+torch.save(model.state_dict(), str(Path(CFG["output_dir"])/"final_epoch_model.pt")); print("[train] saved model at final epoch", flush=True)
 
 # %% [markdown]
 # ## 8) Extremophile eval
