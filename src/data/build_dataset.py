@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from data.vector_builder import derive_env_vector_from_exoplanet
+
+AA = np.array(list("ACDEFGHIKLMNPQRSTVWY"))
+
+
+def sequence_from_env(length: int, env_vec: np.ndarray) -> str:
+    """Create a baseline synthetic sequence conditioned on a derived environment vector."""
+    probs = np.ones(len(AA), dtype=float)
+    sulfur = float(env_vec[3])
+    iron = float(env_vec[6])
+    oxygen = float(env_vec[2])
+    salinity_proxy = float(env_vec[8])
+
+    # chemistry-aware weighting heuristics
+    for aa in ["C", "M", "H"]:
+        probs[np.where(AA == aa)[0][0]] *= 1.0 + sulfur + iron
+    for aa in ["D", "E"]:
+        probs[np.where(AA == aa)[0][0]] *= 1.0 + salinity_proxy
+    for aa in ["G", "A"]:
+        probs[np.where(AA == aa)[0][0]] *= 1.0 + oxygen * 0.5
+
+    probs /= probs.sum()
+    return "".join(np.random.choice(AA, size=length, p=probs))
+
+
+def load_extremophile_records(raw_dir: Path, holdout_fraction: float) -> tuple[list[dict], list[dict]]:
+    path = raw_dir / "extremophile_sequences.jsonl"
+    if not path.exists():
+        return [], []
+
+    rows = []
+    with path.open("r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            r = json.loads(line)
+            rows.append(
+                {
+                    "id": f"ext_{i}",
+                    "env_vector": r["env_vector"],
+                    "sequence": r["sequence"],
+                    "function_label": int(r.get("function_label", 0)),
+                    "source": "extremophile",
+                    "habitat": r.get("habitat", "unknown"),
+                    "organism_name": r.get("organism_name", "unknown"),
+                }
+            )
+
+    if not rows:
+        return [], []
+
+    n_holdout = max(1, int(len(rows) * holdout_fraction))
+    np.random.shuffle(rows)
+    return rows[n_holdout:], rows[:n_holdout]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--raw_dir", default="data/raw")
+    parser.add_argument("--out_path", default="data/processed/dataset.jsonl")
+    parser.add_argument("--extreme_eval_path", default="data/processed/extremophile_eval.jsonl")
+    parser.add_argument("--n_samples", type=int, default=2000)
+    parser.add_argument("--extreme_holdout_fraction", type=float, default=0.2)
+    args = parser.parse_args()
+
+    raw_dir = Path(args.raw_dir)
+    out_path = Path(args.out_path)
+    eval_path = Path(args.extreme_eval_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    exo_path = raw_dir / "nasa_exoplanets.csv"
+    exo_df = pd.read_csv(exo_path) if exo_path.exists() else pd.DataFrame([{} for _ in range(args.n_samples)])
+
+    records = []
+    for i in range(args.n_samples):
+        row = exo_df.iloc[i % len(exo_df)] if len(exo_df) > 0 else pd.Series(dtype=float)
+        env = np.array(derive_env_vector_from_exoplanet(row))
+        seq_len = int(np.random.randint(80, 220))
+        seq = sequence_from_env(seq_len, env)
+        fn_label = int(np.digitize(env.mean(), bins=np.linspace(0.2, 0.9, 7)))
+        records.append(
+            {
+                "id": f"sim_{i}",
+                "env_vector": env.tolist(),
+                "sequence": seq,
+                "function_label": min(fn_label, 7),
+                "source": "simulated",
+            }
+        )
+
+    ext_train, ext_eval = load_extremophile_records(raw_dir, args.extreme_holdout_fraction)
+    records.extend(ext_train)
+
+    with out_path.open("w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
+
+    with eval_path.open("w", encoding="utf-8") as f:
+        for r in ext_eval:
+            f.write(json.dumps(r) + "\n")
+
+    print(f"[ok] wrote {len(records)} training records to {out_path}")
+    print(f"[ok] wrote {len(ext_eval)} extremophile eval records to {eval_path}")
+
+
+if __name__ == "__main__":
+    main()

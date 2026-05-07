@@ -1,0 +1,39 @@
+seed: 42
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  output_dir: outputs
+
+data:
+  sequence_type: protein
+  max_sequence_len: 256
+  env_feature_columns:
+    - carbon
+    - nitrogen
+    - oxygen
+    - sulfur
+    - phosphorus
+    - silicon
+    - iron
+    - magnesium
+    - sodium
+    - potassium
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+training:
+  batch_size: 16
+  num_epochs: 5
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  grad_clip: 1.0
+
+model:
+  d_model: 128
+  nhead: 4
+  num_layers: 3
+  dim_feedforward: 256
+  dropout: 0.1
+  max_len: 256
+  function_classes: 8
