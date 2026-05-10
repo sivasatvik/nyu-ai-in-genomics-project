@@ -3,6 +3,13 @@ import pandas as pd
 import io
 import re
 
+
+if __package__ is None or __package__ == "":
+    from pathlib import Path
+    import sys
+
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
 def fetch_uniprot_environmental_data(limit=100):
     """
     Fetches protein sequences from UniProt that have explicitly measured 
@@ -73,7 +80,7 @@ if __name__ == "__main__":
         "Temperature dependence": "Raw_Temperature",
         "pH dependence": "Raw_pH"
     })
-    
+
     # 3. Apply the regex extraction functions to create our float signals
     print("Extracting numerical signals via Regex...")
     df['Temperature_Signal'] = df['Raw_Temperature'].apply(extract_temperature)

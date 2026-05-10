@@ -5,16 +5,18 @@ import re
 import time
 
 
+if __package__ is None or __package__ == "":
+    from pathlib import Path
+    import sys
+
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
 # Set to None to show all columns
 pd.set_option('display.max_columns', None)
 
 def fetch_uniprot_environmental_data(tax_id, limit=100):
-    """
-    Fetches protein sequences from UniProt that have explicitly measured 
-    temperature or pH dependencies for a specific Taxonomy ID.
-    """
     url = "https://rest.uniprot.org/uniprotkb/search"
-    
+
     # We search for the specific taxonomy ID AND explicitly annotated temp/pH data
     query = f'(taxonomy_id:{tax_id}) AND ("Optimum temperature" OR "Optimum pH")'
     fields = "accession,id,organism_name,temp_dependence,ph_dependence,sequence"
