@@ -34,7 +34,7 @@ DATA_FILE = Path("goldData.xlsx")
 SHEET_NAME = "Organism"
 CACHE_FILE = Path("goldData_Organism.parquet")
 OUTPUT_FILE = Path("combined_uniprot_and_gold_environmental_data.parquet")
-MAX_TAX_IDS = 100
+MAX_TAX_IDS = 1000
 PROTEINS_PER_TAX_ID = 5
 API_PAUSE_SECONDS = 0.5
 

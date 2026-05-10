@@ -29,20 +29,41 @@ def fetch_nasa_power_data(lat, lon, date_str):
         "format": "JSON"
     }
     
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        
-        # Extract the metrics (they are nested under properties -> parameter)
-        metrics = data['properties']['parameter']
-        
-        return {
-            "Temperature_C": metrics['T2M'][date_str],
-            "Humidity_Percent": metrics['RH2M'][date_str],
-            "Radiation_W_m2": metrics['ALLSKY_SFC_SW_DWN'][date_str]
-        }
-    else:
-        print(f"Error fetching NASA data: {response.status_code}")
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+
+            # Check if response contains properties and parameters
+            if 'properties' not in data or 'parameter' not in data['properties']:
+                print(f"NASA API error for ({lat}, {lon}, {date_str}): Missing properties in response")
+                return None
+
+            metrics = data['properties']['parameter']
+            result = {}
+
+            # Safely extract each parameter
+            if 'T2M' in metrics and date_str in metrics['T2M']:
+                result["Temperature_C"] = metrics['T2M'][date_str]
+            else:
+                print(f"Warning: T2M data missing for ({lat}, {lon}, {date_str})")
+
+            if 'RH2M' in metrics and date_str in metrics['RH2M']:
+                result["Humidity_Percent"] = metrics['RH2M'][date_str]
+            else:
+                print(f"Warning: RH2M data missing for ({lat}, {lon}, {date_str})")
+
+            if 'ALLSKY_SFC_SW_DWN' in metrics and date_str in metrics['ALLSKY_SFC_SW_DWN']:
+                result["Radiation_W_m2"] = metrics['ALLSKY_SFC_SW_DWN'][date_str]
+            else:
+                print(f"Warning: ALLSKY_SFC_SW_DWN data missing for ({lat}, {lon}, {date_str})")
+
+            return result if result else None
+        else:
+            print(f"Error fetching NASA data: Status {response.status_code} for ({lat}, {lon}, {date_str})")
+            return None
+    except Exception as e:
+        print(f"Exception fetching NASA data for ({lat}, {lon}, {date_str}): {e}")
         return None
 
 def format_nasa_date(date_val):
