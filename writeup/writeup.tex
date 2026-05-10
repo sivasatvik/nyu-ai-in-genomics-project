@@ -1,251 +1,283 @@
-% AI in Genomics — Project Writeup
+% AI in Genomics -- Project Writeup
 \documentclass[11pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage{geometry}
 \usepackage{hyperref}
 \usepackage{graphicx}
-\usepackage{amsmath}
 \usepackage{booktabs}
 \usepackage{enumitem}
+\usepackage{caption}
 \geometry{margin=1in}
+\graphicspath{{../}{./}}
+\emergencystretch=3em
 
-\title{Modeling Protein Sequence Adaptation to Environmental Factors\\
-       Using Gold Database Samples and UniProt Sequences}
-\author{NYU AI in Genomics Project}
-\date{\today}
+\title{Environmental Conditioning of Protein Sequence Generation\\
+       from GOLD, UniProt, NASA POWER, and WorldClim}
+\author{AI in Genomics Project}
+\date{}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This document describes the data acquisition, enrichment, feature engineering,
-modeling and evaluation plan for predicting protein sequence variation as a
-function of environmental factors. Samples (with locality information) from the
-Gold database will be linked to UniProt protein sequences. Locality coordinates
-will be enriched with environmental covariates (climate, soil, oceanographic,
-and anthropogenic metrics). The enriched dataset will be used to train
-conditional sequence prediction models that learn how environmental changes
-affect protein sequences. This writeup is designed to be kept up-to-date as the
-project progresses and to serve as the authoritative project PDF.
+This project asks whether environmental measurements attached to biological
+sampling locations can be used to condition a protein sequence generator. The
+implemented code builds a dataset by linking GOLD organism metadata to reviewed
+UniProt protein sequences, enriching sample coordinates with NASA POWER daily
+weather and WorldClim monthly climate rasters, cleaning invalid numerical
+sentinels, and training a recurrent neural network that generates amino-acid
+sequences from environmental inputs. The current model should be treated as a
+proof of concept: it demonstrates an end-to-end reproducible pipeline and an
+interactive Streamlit interface, but it does not yet prove that generated
+sequences are biologically functional or causally adapted to the environment.
 \end{abstract}
 
-\section{Background and Motivation}
-Many extremophiles and environment-adapted organisms exhibit sequence features
-correlated with environmental pressures (temperature, salinity, pH, radiation,
-etc.). By systematically linking curated sample metadata (location, substrate,
-temperature recorded at sampling) from the Gold dataset to protein sequences in
-UniProt, and enriching each sample with high-resolution environmental covariates
-derived from the sampling coordinates, we can build models that predict
-sequence-level changes in response to environmental factor perturbations.
+\section{Background}
+Proteins are chains of amino acids that fold into molecular machines. Their
+sequences are constrained by evolution, organism history, and environment. For
+example, proteins from organisms living in hot or dry habitats may be under
+different selective pressures than proteins from temperate habitats. Our goal is
+not to model all of evolution, but to test a narrower machine-learning question:
+can a model learn a relationship between coarse environmental variables and the
+distribution of protein sequences observed in organisms sampled from those
+environments?
 
-\section{Objectives}
+The project combines four public resources. GOLD provides organism-level sample
+metadata, including taxonomy IDs and geographic coordinates when available
+\cite{gold}. UniProt provides reviewed protein sequences for each taxonomy ID
+\cite{uniprot}. NASA POWER provides daily surface temperature and radiation for
+the sample location/date \cite{nasa}. WorldClim provides long-term monthly
+climate rasters, including precipitation, solar radiation, average temperature,
+and vapour pressure \cite{worldclim}. SoilGrids querying is implemented in the
+code, but the current merged training table does not include the returned pH or
+soil-carbon fields as model inputs \cite{soilgrids}.
+
+\section{Motivation}
+Most protein generation models are conditioned on sequence context, structure,
+or textual prompts. We explored a different conditioning signal: the physical
+environment associated with the organism from which a protein was sampled. If
+such a signal is useful, it could eventually help generate candidate protein
+sequences for unusual environmental settings. The current project tests the
+infrastructure and modeling feasibility of this idea rather than claiming a
+validated biological design tool.
+
+\section{Data}
+\subsection{Source Data and Linking}
+The pipeline begins with the \texttt{Organism} sheet in \texttt{goldData.xlsx}.
+The loader caches this sheet as \texttt{goldData\_Organism.parquet}. In the
+local cached copy, GOLD contains 530,160 organism rows; 64,665 rows have both
+latitude and longitude. The code sorts these coordinate-bearing rows and queries
+UniProt using each row's NCBI taxonomy ID.
+
+For each taxonomy ID, \texttt{src/main.py} calls the UniProt REST search API for
+up to five reviewed protein entries. The current query is
+\texttt{taxonomy\_id:<id> AND reviewed:true}; it retrieves accession, entry
+name, organism name, and sequence. These protein rows are then joined back to
+GOLD by taxonomy ID and enriched by geographic location.
+
+\subsection{Environmental Covariates}
+Each unique latitude, longitude, and collection-date triple is enriched with:
+\begin{itemize}[nosep]
+    \item NASA POWER daily temperature at 2 meters and shortwave radiation.
+    These are stored as \texttt{NASA\_Temp\_C} and \texttt{NASA\_Radiation}.
+    If GOLD lacks a parseable collection date, the code uses 2015-01-01 as a
+    fallback date.
+    \item WorldClim monthly precipitation (\texttt{prec\_01}--\texttt{prec\_12}),
+    solar radiation (\texttt{srad\_01}--\texttt{srad\_12}), average
+    temperature (\texttt{tavg\_01}--\texttt{tavg\_12}), and vapour pressure
+    (\texttt{vapr\_01}--\texttt{vapr\_12}) sampled from local GeoTIFF rasters.
+    \item SoilGrids pH and soil organic carbon are fetchable through
+    \texttt{src/soilgrids\_data.py}, but those fields are currently commented
+    out during dataset assembly and are not used by the trained model.
+\end{itemize}
+
+\subsection{Cleaning and Dataset Size}
+\texttt{src/clean\_data.py} converts the merged parquet to CSV and removes rows
+containing common no-data or overflow sentinels in any numeric column, including
+\texttt{-9999}, \texttt{-32768}, \texttt{32767}, \texttt{65535}, or values
+larger than \texttt{1e30} in magnitude. Table~\ref{tab:data} summarizes the
+largest cleaned dataset currently present in the repository.
+
+\begin{table}[htbp]
+\centering
+\caption{Current local dataset used by the implemented training pipeline. The
+``raw merged'' row refers to \texttt{combined\_uniprot\_and\_gold\_environmental\_data\_10K.csv};
+the ``cleaned'' row refers to \texttt{cleaned\_environmental\_data\_10K.csv}.}
+\label{tab:data}
+\begin{tabular}{lrrrr}
+\toprule
+Dataset & Rows & Unique taxonomy IDs & Unique UniProt accessions & Median sequence length \\
+\midrule
+Raw merged & 10,113 & 830 & 8,888 & 381 aa \\
+Cleaned & 8,631 & 720 & 7,809 & 381 aa \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In the cleaned 10K dataset, 8,376 rows have NASA temperature, and 8,296 rows
+have NASA radiation. Protein sequence lengths range from 6 to 11,872 amino
+acids, with a mean length of 450 amino acids. During training, sequences are
+truncated to 198 amino acids plus start and end tokens, so very long proteins
+are represented only by their N-terminal prefix.
+
+\section{Methods}
+\subsection{Feature Engineering}
+The model uses three environmental input features:
 \begin{enumerate}[nosep]
-  \item Gather Gold database samples with precise geocoordinates and linked
-    specimen identifiers.
-  \item Retrieve corresponding protein sequences (or sequence identifiers)
-    from UniProt for each sample where available.
-  \item Enrich each sample with environmental covariates derived from the
-    geographic coordinates.
-  \item Construct feature pipelines to combine environment data and sample
-    metadata, and construct labels from sequence representations.
-  \item Train conditional sequence prediction models to predict sequence
-    variation under controlled changes to environmental inputs.
-  \item Evaluate model fidelity with sequence-based metrics and ecological
-    plausibility checks.
+    \item \texttt{NASA\_Temp\_C}: daily NASA POWER temperature for the sample
+    location/date.
+    \item \texttt{Total\_Annual\_Prec}: sum of the 12 WorldClim monthly
+    precipitation values.
+    \item \texttt{Mean\_Annual\_Solar\_Rad}: mean of the 12 WorldClim monthly
+    solar-radiation values.
 \end{enumerate}
+Although \texttt{src/train.py} also computes \texttt{Mean\_Annual\_Temp}, that
+field is not included in the current model input. The three selected numeric
+features are standardized with scikit-learn's \texttt{StandardScaler}. The
+fitted scaler is saved as \texttt{checkpoints/environmental\_scaler.pkl} and is
+reused by the Streamlit app.
 
-\section{Data Sources and Retrieval}
-\subsection{Gold database (samples and metadata)}
-\begin{itemize}[nosep]
-    \item Primary source for sample metadata: sample identifier, sampling date, latitude/longitude, sampled substrate, measurement metadata (if available).
-    \item Retrieval: use Gold API or downloadable TSV/CSV export. Filter for records with valid coordinates and sample-level identifiers that can be linked to sequence records.
-\end{itemize}
+\subsection{Sequence Encoding}
+The output sequence is a character-level amino-acid sequence. The vocabulary has
+23 tokens: the 20 standard amino acids plus \texttt{<PAD>}, \texttt{<SOS>}, and
+\texttt{<EOS>}. Each training sequence is truncated to a maximum length of 200
+tokens after adding start and end markers. Unknown or nonstandard amino-acid
+characters are currently mapped to \texttt{<PAD>}; this is simple, but it means
+rare sequence characters are treated like padding rather than modeled
+explicitly.
 
-\subsection{UniProt (sequences)}
-\begin{itemize}[nosep]
-    \item UniProt entries are retrieved using UniProt accession numbers/TAX ID or by mapping sample identifiers (where the Gold entry contains links to sequence accessions or organism identifiers).
-    \item Retrieval methods: UniProt REST API, batch queries, or local UniProt downloads. Use accession mapping endpoints or TAX ID to translate between gene or sample IDs and protein sequences when needed.
-\end{itemize}
+\subsection{Model Architecture}
+The implemented model in \texttt{src/model.py} is a conditional LSTM protein
+generator. The standardized three-dimensional environmental vector is passed
+through two learned linear layers. One initializes the LSTM hidden state and the
+other initializes the LSTM cell state. The amino-acid tokens are embedded into
+64-dimensional vectors, processed by a single-layer LSTM with hidden size 256,
+and projected to the 23-token vocabulary at each position. During training, the
+model learns next-token prediction: given the environment and all previous
+tokens, it predicts the next amino acid.
 
-\subsection{Linking strategy}
-\begin{itemize}[nosep]
-    \item Exact match: if Gold provides UniProt accession or EMBL/GenBank accessions, use them directly to fetch canonical protein sequences.
-    \item Taxonomic + gene matching: when direct accessions are missing, use taxon and locus/gene information to identify candidate UniProt entries; record confidence and provenance for each mapping.
-\end{itemize}
+\subsection{Training and Evaluation Protocol}
+\texttt{src/train.py} drops rows missing sequence, NASA temperature, annual
+precipitation, or annual solar radiation. It then splits rows into 90\% training
+and 10\% validation using \texttt{random\_state=42}. Training uses Adam with
+learning rate 0.001 for 100 epochs, batch size 32, and cross-entropy loss over
+next-token predictions. Padding tokens are ignored in the loss. The best model
+by validation loss is saved to the requested checkpoint path.
 
-\section{Environmental Enrichment (Work in Progress)}
-Given a latitude/longitude for each sample, enrich with the following covariates. Prefer open datasets with programmatic access and clear spatial resolution metadata.
+This split prevents exact row overlap between training and validation, but it is
+not a stringent biological generalization test. Multiple proteins from the same
+organism, taxonomy ID, or geographic location can appear on both sides of the
+split. Therefore, validation loss measures held-out row prediction under random
+splitting, not generalization to unseen species, protein families, or
+environments.
 
-\subsection{Static and long-term climatologies}
-\begin{itemize}[nosep]
-    \item WorldClim / CHELSA: long-term monthly climatologies (temperature, precipitation, bioclimatic variables).
-    \item SoilGrids: soil pH, organic carbon, texture classes.
-\end{itemize}
+\section{Results}
+\subsection{End-to-End Pipeline}
+The main result is a working end-to-end pipeline. \texttt{src/main.py} builds a
+merged protein/environment table, \texttt{src/clean\_data.py} removes corrupted
+numeric rows, \texttt{src/train.py} trains and checkpoints the conditional LSTM,
+and \texttt{src/app.py} loads the checkpoint and scaler into an interactive
+Streamlit interface. The repository currently contains trained checkpoints for
+the 5K and 10K data runs, plus a fitted environmental scaler.
 
-\subsection{Short-term / time-specific weather and radiation}
-\begin{itemize}[nosep]
-    \item NASA POWER / ERA5 (or ERA5-Land): surface temperature, radiation, humidity for the sampling date (if available) or for a representative window.
-\end{itemize}
+\subsection{Sequence Space Visualization}
+\texttt{src/visualization.py} provides an exploratory check of whether the
+sequence dataset contains visible environmental structure. It converts each
+protein sequence into 3-mer TF-IDF features, reduces those features to two
+principal components, and colors the resulting points by environmental
+variables. This is not a model-evaluation metric, but it is useful for checking
+whether obvious climate gradients or data artifacts appear in sequence feature
+space.
 
-\subsection{Oceanographic variables (for marine samples)}
-\begin{itemize}[nosep]
-    \item Marine datasets: sea-surface temperature (SST), salinity, pH proxies, chlorophyll-a (from MODIS/Aqua or OISST), and depth/bathymetry.
-\end{itemize}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{environmental_sequence_pca_5plots.png}
+\caption{Exploratory protein sequence space from the cleaned dataset. Each
+point is one protein sequence represented by 3-mer TF-IDF features and reduced
+to two principal components. Panels color the same points by NASA collection-day
+temperature, WorldClim annual temperature, WorldClim annual precipitation,
+WorldClim annual solar radiation, and NASA collection-day radiation.}
+\label{fig:pca}
+\end{figure}
 
-\subsection{Anthropogenic and land-use covariates}
-\begin{itemize}[nosep]
-    \item Human footprint indices, land cover classes, proximity to built-up areas and agricultural extent (from MODIS/ESA Land Cover products).
-\end{itemize}
+\subsection{Generation Interface}
+The trained model can generate a sequence from user-specified temperature,
+annual precipitation, and solar-radiation values. In command-line inference,
+\texttt{src/train.py} tests three example environments: an Earth-like temperate
+case, a hot arid high-radiation case, and a frozen low-radiation case.
+\texttt{src/app.py} exposes the same generation function in Streamlit with
+sliders and preset environments. Generation is greedy: at each step, the model
+chooses the most likely next token until it emits \texttt{<EOS>} or reaches the
+maximum generation length.
 
-\subsection{Implementation notes for enrichment}
-\begin{itemize}[nosep]
-    \item For raster datasets (WorldClim, SoilGrids, etc.) use a spatial sampling library (rasterio / xarray / rioxarray in Python) to extract point values at sample coordinates. Handle coordinate reference systems explicitly.
-    \item For model-ready time-series (e.g., NASA POWER), align the sampling date to the environmental record and compute summary statistics (mean, min, max, anomalies) over relevant windows (sampling day, 7-day, 30-day, seasonal).
-    \item Record data provenance and resolution (e.g., WorldClim v2 2.5 arc-min).
-\end{itemize}
+\section{Discussion and Limitations}
+The project demonstrates that a heterogeneous genomics-and-environment dataset
+can be assembled and used to condition a sequence generator. The codebase now
+has modular data retrieval, cleaning, training, checkpointing, visualization,
+and UI components. This is the strongest outcome of the current work: the
+pipeline is reproducible and can be iterated on.
 
-\section{Feature Engineering (Work in Progress)}
-\subsection{Environmental feature vector}
-\begin{itemize}[nosep]
-    \item Numeric variables: temperature metrics, precipitation, salinity, pH, radiation, soil organic matter, elevation, distance-to-coast, etc.
-    \item Categorical variables: land cover class, substrate type (rock, sediment, biofilm), biome.
-    \item Normalization: scale continuous variables (z-score or quantile scaling) and encode categorical variables with one-hot or learned embeddings.
-\end{itemize}
+The biological interpretation is still limited. First, the input features are
+coarse descriptors of sampling location, not direct measurements of the
+microenvironment where every organism grew. Second, proteins are strongly shaped
+by function and ancestry; a random row split can overestimate performance if
+closely related organisms or similar protein families appear in both training
+and validation. Third, the model generates short prefixes of proteins because
+training truncates sequences to 200 tokens. Finally, the current code does not
+save final validation loss, per-residue accuracy, edit distance, or biological
+plausibility metrics to a results table. Those metrics should be added before
+making strong claims about model quality.
 
-\subsection{Sequence label representation}
-We consider multiple label formulations depending on modeling goals:
-\begin{enumerate}[nosep]
-  \item Residue-level prediction: predict the amino-acid at each aligned
-    position. Requires multiple-sequence alignment (MSA) and fixed-length
-    positional labels (useful for single-protein families).
-  \item K-mer / signature prediction: predict distribution over k-mer counts
-    or sequence-derived summary statistics (GC-equivalent, hydrophobicity
-    indexes).
-  \item Embedding/regression targets: map sequences to continuous embeddings
-    (from pre-trained protein language models) and predict embedding vectors as
-    a regression conditioned on environmental features.
-  \item Generative sequence model: learn conditional sequence generator
-    (transformer, conditional VAE) that outputs full amino-acid sequences given
-    environmental features.
-\end{enumerate}
+The next most important improvements are therefore methodological rather than
+architectural: save training curves and validation metrics, split data by
+taxonomy ID or protein family, add sequence-quality filters for nonstandard
+amino acids, compare against an unconditional LSTM baseline, and evaluate
+generated sequences with protein-level summaries such as amino-acid
+composition, hydrophobicity, and predicted stability. SoilGrids features are
+also already implemented and could be added to the model input once their
+coverage and units are checked.
 
-\subsection{Choice trade-offs}
-\begin{itemize}[nosep]
-    \item Alignment-based residue prediction is interpretable but requires clean MSAs and homologous sequences.
-    \item Embedding/regression approaches are flexible for diverse sequence lengths and can leverage pre-trained protein language models (e.g., ESM, ProtBert).
-\end{itemize}
+\section{Reproducibility}
+The main commands are:
+\begin{verbatim}
+python src/main.py
 
-\section{Modeling Approaches (Work in Progress)}
-\subsection{Conditional discriminative models}
-\begin{itemize}[nosep]
-    \item Predictors for residue or embedding targets: feed-forward networks, gradient-boosted trees (for aggregated labels), or sequence-to-label CNN/LSTM models when inputs include local sequence context.
-\end{itemize}
+python src/clean_data.py \
+  --input-parquet combined_uniprot_and_gold_environmental_data_10K.parquet \
+  --output-csv combined_uniprot_and_gold_environmental_data_10K.csv \
+  --cleaned-output-csv cleaned_environmental_data_10K.csv
 
-\subsection{Conditional generative models}
-Sequence generation conditioned on environment using
-\begin{itemize}[nosep]
-    \item Conditional Transformer decoder (conditioning via concatenated tokens or cross-attention to environment embeddings).
-    \item Conditional VAE: latent space captures sequence variation and decoder reconstructs sequences given environment vectors.
-\end{itemize}
+python src/train.py \
+  --data cleaned_environmental_data_10K.csv \
+  --checkpoint checkpoints/best_alien_protein_model_10K.pt
 
-\subsection{Model inputs and conditioning}
-\begin{itemize}[nosep]
-    \item Simple conditioning: concatenate normalized environment vector to each token embedding or to the decoder's initial states.
-    \item Cross-attention: allow decoder layers to attend to a learned environment embedding sequence.
-\end{itemize}
+streamlit run src/app.py -- \
+  --checkpoint checkpoints/best_alien_protein_model_10K.pt \
+  --scaler checkpoints/environmental_scaler.pkl
+\end{verbatim}
+The WorldClim GeoTIFFs are expected under \texttt{data/worldclim/}. The main
+scripts are organized under \texttt{src/}; checkpoints and the scaler are stored
+under \texttt{checkpoints/}; exploratory figures are written to the repository
+root by \texttt{src/visualization.py}. External API calls require internet
+access and may change if source services update their schemas or availability.
 
-\section{Training Pipeline and Reproducibility}
-\subsection{Data pipeline}
-Steps:
-\begin{itemize}[nosep]
-    \item[1] Ingest Gold sample rows with coordinates; \item[2] Map to UniProt sequences;
-    \item[3] Enrich coordinates with environmental rasters/APIs;
-    \item[4] Precompute sequence labels and embeddings;
-    \item[5] Construct training/validation splits stratified by geography, taxon, and sampling time where appropriate.
-\end{itemize}
+\begin{thebibliography}{9}
+\bibitem{gold}
+GOLD: Genomes Online Database. \url{https://gold.jgi.doe.gov/}
 
-\subsection{Implementation notes}
-\begin{itemize}[nosep]
-    \item Organize code under `src/' with modular components: `data/' (downloaders, mappers), `features/' (environment extraction, normalization), `models/', and `experiments/' (training harness, hyperparameter configs).
-    \item Save provenance metadata (source, raster name, extraction timestamp) in a companion JSON or Parquet table for each sample.
-\end{itemize}
+\bibitem{uniprot}
+The UniProt Consortium. UniProt: the Universal Protein Knowledgebase.
+\url{https://www.uniprot.org/}
 
-\subsection{Reproducibility}
-\begin{itemize}[nosep]
-    \item Use pinned package versions in `requirements.txt' or `environment.yml'.
-    \item Provide a `README.md' with commands to reproduce the dataset enrichment and training. Store random seeds and checkpoint model weights in `checkpoints/'.
-\end{itemize}
+\bibitem{nasa}
+NASA POWER Project. Prediction Of Worldwide Energy Resources.
+\url{https://power.larc.nasa.gov/}
 
-\section{Evaluation and Validation}
-\subsection{Quantitative metrics}
-\begin{itemize}[nosep]
-    \item Per-residue accuracy, per-sequence edit distance (Levenshtein), BLEU-style scores adapted for amino-acids, and embedding-space cosine similarity.
-    \item Calibration metrics for probabilistic models (Brier score, negative log-likelihood).
-\end{itemize}
+\bibitem{worldclim}
+WorldClim version 2.1 climate data. \url{https://www.worldclim.org/}
 
-\subsection{Ecological and biological validation}
-\begin{itemize}[nosep]
-    \item Compare predicted sequences' biophysical properties (e.g., predicted thermostability, isoelectric point, hydrophobicity) against expected trends for environmental changes.
-    \item Case studies: hold out geographically or environmentally distinct regions and test whether predicted sequence adjustments are biologically plausible.
-\end{itemize}
+\bibitem{soilgrids}
+ISRIC SoilGrids. \url{https://soilgrids.org/}
+\end{thebibliography}
 
-\section{Experiments and Expected Results}
-\begin{itemize}[nosep]
-  \item Baseline: predict sequence embeddings with a linear model from
-    environmental covariates; measure embedding reconstruction error.
-  \item Generative baseline: conditional LSTM/Transformer that generates
-    short protein regions given environment vectors.
-  \item Ablations: remove subsets of environmental factors (temperature,
-    salinity) to quantify their marginal effects on sequence predictions.
-  \item Sensitivity analysis: perturb input covariates and measure sequence
-    changes to estimate model responsiveness.
-\end{itemize}
-
-\section{Data Privacy, Ethics, and Limitations}
-\begin{itemize}[nosep]
-    \item Track and respect any access restrictions or licensing for Gold or UniProt subsets. If geolocation data are sensitive, consider obfuscation or aggregation to larger spatial units.
-    \item Limitations: observational confounding (correlated environmental variables, unobserved sampling biases), phylogenetic dependence among samples, and the challenge of causally attributing sequence changes to environment.
-\end{itemize}
-
-% \section{Practical How-To: Running the Pipeline}
-% \begin{enumerate}[nosep]
-%   \item Prepare environment: create a Python virtualenv and install
-%     dependencies from `requirements.txt`.
-%   \item Fetch Gold sample exports and save to `data/raw/gold_samples.csv`.
-%   \item Run `src/uniprot_and_gold_data.py` to map Gold entries to UniProt and
-%     download sequences to `data/processed/sequences/`.
-%   \item Run `src/environmental_enrichment.py` to extract raster/APIs values
-%     to `data/processed/env_features.parquet`.
-%   \item Run training: `python src/train.py --config experiments/config.yaml`.
-% \end{enumerate}
-
-% \section{Keeping the Writeup Updated}
-% - This file `writeup.tex` should be edited as experiments progress. To rebuild
-%   the PDF locally:
-% \begin{verbatim}
-% pdflatex writeup.tex
-% bibtex writeup (if using citations)
-% pdflatex writeup.tex
-% pdflatex writeup.tex
-% \end{verbatim}
-
-\section{Next Steps}
-\begin{itemize}[nosep]
-  \item Implement automated mapping between Gold and UniProt and store a
-    provenance table.
-  \item Prototype environmental extraction for a small sample set (10--100
-    points) to validate raster/API choices.
-  \item Build a baseline embedding regression and evaluate.
-\end{itemize}
-
-% \section{Appendix: Recommended packages and tools}
-% \begin{itemize}[nosep]
-%   \item Python: `requests`, `pandas`, `geopandas`, `rasterio`, `xarray`,
-%     `rioxarray`, `scikit-learn`, `pytorch`/`tensorflow`, `biopython`.
-%   \item Data sources: UniProt REST API, WorldClim, CHELSA, SoilGrids,
-%     NASA POWER, ERA5, MODIS/Ocean products.
-% \end{itemize}
-
-\vfill
-\noindent Last updated: \today.
 \end{document}
