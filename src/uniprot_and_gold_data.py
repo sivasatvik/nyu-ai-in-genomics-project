@@ -18,8 +18,10 @@ def fetch_uniprot_environmental_data(tax_id, limit=100):
     url = "https://rest.uniprot.org/uniprotkb/search"
 
     # We search for the specific taxonomy ID AND explicitly annotated temp/pH data
-    query = f'(taxonomy_id:{tax_id}) AND ("Optimum temperature" OR "Optimum pH")'
-    fields = "accession,id,organism_name,temp_dependence,ph_dependence,sequence"
+    # query = f'(taxonomy_id:{tax_id}) AND ("Optimum temperature" OR "Optimum pH")'
+    # fields = "accession,id,organism_name,temp_dependence,ph_dependence,sequence"
+    query = f'(taxonomy_id:{tax_id}) AND (reviewed:true)'
+    fields = "accession,id,organism_name,sequence"
     
     params = {
         "query": query,

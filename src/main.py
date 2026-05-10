@@ -35,7 +35,7 @@ SHEET_NAME = "Organism"
 CACHE_FILE = Path("goldData_Organism.parquet")
 OUTPUT_FILE = Path("combined_uniprot_and_gold_environmental_data.parquet")
 MAX_TAX_IDS = 100
-PROTEINS_PER_TAX_ID = 100
+PROTEINS_PER_TAX_ID = 5
 API_PAUSE_SECONDS = 0.5
 
 
@@ -114,12 +114,12 @@ def fetch_uniprot_sequences(gold_df):
     final_dataset = final_dataset.rename(
         columns={
             "Organism": "Organism_Name",
-            "Temperature dependence": "Raw_Temperature",
-            "pH dependence": "Raw_pH",
+            # "Temperature dependence": "Raw_Temperature",
+            # "pH dependence": "Raw_pH",
         }
     )
-    final_dataset["Temperature_Signal"] = final_dataset["Raw_Temperature"].apply(extract_temperature)
-    final_dataset["pH_Signal"] = final_dataset["Raw_pH"].apply(extract_ph)
+    # final_dataset["Temperature_Signal"] = final_dataset["Raw_Temperature"].apply(extract_temperature)
+    # final_dataset["pH_Signal"] = final_dataset["Raw_pH"].apply(extract_ph)
     return final_dataset
 
 
