@@ -6,7 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import PCA
 
 # Load the cleaned dataset
-df = pd.read_csv('cleaned_environmental_data_10K.csv')
+df = pd.read_csv('data/cleaned_environmental_data_10K.csv')
 
 print("1. Extracting 3-mers and calculating TF-IDF...")
 def get_kmers(sequence, k=3):
@@ -74,5 +74,5 @@ for i, ax in enumerate(axes.flat):
     ax.set_ylabel('')
 
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("environmental_sequence_pca_5plots.png", dpi=300, bbox_inches='tight')
+plt.savefig("figures/environmental_sequence_pca_5plots.png", dpi=300, bbox_inches='tight')
 print("Plot saved.")

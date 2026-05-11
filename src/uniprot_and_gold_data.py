@@ -79,9 +79,9 @@ def extract_ph(ph_string):
 
 if __name__ == "__main__":
     # 1. Load the Excel file and specify the sheet name
-    file_path = "goldData.xlsx"
+    file_path = "data/goldData.xlsx"
     sheet_name = "Organism"
-    fast_file_path = 'goldData_Organism.parquet'
+    fast_file_path = 'data/goldData_Organism.parquet'
     # Check if the fast-loading file already exists
     if os.path.exists(fast_file_path):
         print("Loading lightning-fast Parquet file...")
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         final_dataset['Temperature_Signal'] = final_dataset['Raw_Temperature'].apply(extract_temperature)
         final_dataset['pH_Signal'] = final_dataset['Raw_pH'].apply(extract_ph)
         # Save this final dataset to parquet for lightning-fast loading in the future
-        final_dataset.to_parquet('combined_uniprot_and_gold_environmental_data.parquet', index=False)
+        final_dataset.to_parquet('data/combined_uniprot_and_gold_environmental_data.parquet', index=False)
         
         # Show a preview
         display_final_dataset = final_dataset[['Entry', 'Entry Name', 'Organism_Name', 'Temperature_Signal', 'pH_Signal', 'Sequence']]

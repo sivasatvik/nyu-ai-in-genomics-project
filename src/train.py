@@ -62,7 +62,7 @@ def generate_protein(model, scaler, temp_c, precip, radiation, device, max_len=1
         return "".join(generated_sequence)
 
 
-def main(csv_path, checkpoint_path):
+def main(csv_path, scaler_path, checkpoint_path):
     """Main training and inference pipeline."""
     # Load data and prepare features
     df = pd.read_csv(csv_path)
@@ -92,8 +92,8 @@ def main(csv_path, checkpoint_path):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     # Save the scaler for later use in the app
-    joblib.dump(scaler, 'checkpoints/environmental_scaler.pkl')
-    print("Saved scaler to checkpoints/environmental_scaler.pkl")
+    joblib.dump(scaler, scaler_path)
+    print(f"Saved scaler to {scaler_path}")
 
     # Train/Test Split
     X_train, X_val, Y_train, Y_val = train_test_split(X_scaled, Y, test_size=0.1, random_state=42)
@@ -226,14 +226,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d",
         "--data",
-        default="cleaned_environmental_data.csv",
-        help="Path to input CSV file (default: cleaned_environmental_data.csv)",
+        default="cleaned_environmental_data_10K.csv",
+        help="Path to input CSV file (default: cleaned_environmental_data_10K.csv)",
+    )
+    parser.add_argument(
+        "-s",
+        "--scaler",
+        default="checkpoints/environmental_scaler_10K.pkl",
+        help="Path to scaler pickle file (default: checkpoints/environmental_scaler_10K.pkl)",
     )
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default="checkpoints/best_alien_protein_model.pt",
-        help="Path to model checkpoint file (default: checkpoints/best_alien_protein_model.pt)",
+        default="checkpoints/best_alien_protein_model_10K.pt",
+        help="Path to model checkpoint file (default: checkpoints/best_alien_protein_model_10K.pt)",
     )
     args = parser.parse_args()
-    main(args.data, args.checkpoint)
+    main(args.data, args.scaler, args.checkpoint)

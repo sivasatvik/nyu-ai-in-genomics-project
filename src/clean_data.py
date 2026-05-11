@@ -57,19 +57,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "-i",
         "--input-parquet",
-        default="combined_uniprot_and_gold_environmental_data_10K.parquet",
+        default="data/combined_uniprot_and_gold_environmental_data_10K.parquet",
         help="Input parquet path",
     )
     parser.add_argument(
         "-o",
         "--output-csv",
-        default="combined_uniprot_and_gold_environmental_data_10K.csv",
+        default="data/combined_uniprot_and_gold_environmental_data_10K.csv",
         help="Output CSV path for raw converted data",
     )
     parser.add_argument(
         "-c",
         "--cleaned-output-csv",
-        default="cleaned_environmental_data_10K.csv",
+        default="data/cleaned_environmental_data_10K.csv",
         help="Output CSV path for cleaned data",
     )
     args = parser.parse_args()

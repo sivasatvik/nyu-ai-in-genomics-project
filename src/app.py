@@ -43,12 +43,12 @@ st.set_page_config(page_title="Alien Genomics AI", page_icon="🧬", layout="wid
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument(
     "--checkpoint",
-    default="checkpoints/best_alien_protein_model.pt",
+    default="checkpoints/best_alien_protein_model_10K.pt",
     help="Path to the trained checkpoint file",
 )
 parser.add_argument(
     "--scaler",
-    default="checkpoints/environmental_scaler.pkl",
+    default="checkpoints/environmental_scaler_10K.pkl",
     help="Path to the fitted scaler pickle file",
 )
 args, _ = parser.parse_known_args()
