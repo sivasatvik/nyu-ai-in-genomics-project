@@ -6,7 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import PCA
 
 # Load the cleaned dataset
-df = pd.read_csv('cleaned_environmental_data.csv')
+df = pd.read_csv('cleaned_environmental_data_10K.csv')
 
 print("1. Extracting 3-mers and calculating TF-IDF...")
 def get_kmers(sequence, k=3):
