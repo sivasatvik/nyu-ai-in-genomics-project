@@ -70,7 +70,7 @@ st.sidebar.markdown("Use the knobs to adjust the climate.")
 # The "Knobs" (Sliders)
 temp_input = st.sidebar.slider("Surface Temperature (°C)", min_value=-50.0, max_value=150.0, value=25.0, step=1.0)
 precip_input = st.sidebar.slider("Annual Precipitation (mm)", min_value=0.0, max_value=5000.0, value=1000.0, step=10.0)
-rad_input = st.sidebar.slider("Solar Radiation (kJ m-2 day-1)", min_value=0.0, max_value=40000.0, value=15000.0, step=100.0)
+rad_input = st.sidebar.slider("Solar Radiation (kJ/m^2/day)", min_value=0.0, max_value=40000.0, value=15000.0, step=100.0)
 
 # Preset buttons for fun
 st.sidebar.markdown("---")

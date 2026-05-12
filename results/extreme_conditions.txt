@@ -1,0 +1,154 @@
+Checking 8631 locations for extreme conditions...
+
+======================================================================
+EXTREME SITE SUMMARY
+======================================================================
+Total locations checked: 8631
+Extreme locations found: 2716
+Percentage extreme: 31.47%
+======================================================================
+
+Details of Extreme Sites (first 20):
+----------------------------------------------------------------------
+
+Row 0:
+  Avg Temperature: -20.8°C
+  Total Annual Precip: 103.0 mm
+  Mean Solar Rad: 12455 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-20.8°C)
+
+Row 1:
+  Avg Temperature: -19.2°C
+  Total Annual Precip: 104.0 mm
+  Mean Solar Rad: 12408 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-19.2°C)
+
+Row 2:
+  Avg Temperature: -22.4°C
+  Total Annual Precip: 89.0 mm
+  Mean Solar Rad: 12386 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-22.4°C)
+
+Row 3:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 4:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 5:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 6:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 7:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 8:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 9:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 10:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 11:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 12:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 13:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 14:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 15:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 16:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 17:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 18:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 19:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+... and 2696 more extreme sites
