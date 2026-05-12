@@ -31,7 +31,11 @@ class EnvDataset(Dataset):
         return len(self.sequences)
 
     def __getitem__(self, idx):
-        seq = self.sequences.iloc[idx]
+        # Handle both pandas Series and standard lists/NumPy arrays
+        if isinstance(self.sequences, pd.Series):
+            seq = self.sequences.iloc[idx]
+        else:
+            seq = self.sequences[idx]
         # Truncate and add Start-Of-Sequence <SOS> and End-Of-Sequence <EOS>
         seq = seq[:self.max_len-2] 
         tokens = ['<SOS>'] + list(seq) + ['<EOS>']
@@ -75,4 +79,37 @@ class ConditionalProteinGenerator(nn.Module):
         
         # 4. Predict next amino acid at each step
         predictions = self.fc(lstm_out)
+        return predictions
+
+# ==========================================
+# 3. A SIMPLER BASELINE MODEL (WITHOUT LSTM GATES)
+# ==========================================
+class BaselineRNNGenerator(nn.Module):
+    def __init__(self, input_feature_dim, embed_size, hidden_size, vocab_size):
+        super(BaselineRNNGenerator, self).__init__()
+        self.hidden_size = hidden_size
+        
+        # Maps environmental variables to the RNN's initial hidden state
+        # (Notice there is no env_to_cell layer, because Vanilla RNNs lack cell states)
+        self.env_to_hidden = nn.Linear(input_feature_dim, hidden_size)
+        
+        # Standard Sequence components
+        self.embedding = nn.Embedding(vocab_size, embed_size, padding_idx=0)
+        
+        # The Baseline: A standard, un-gated RNN
+        self.rnn = nn.RNN(embed_size, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, vocab_size)
+        
+    def forward(self, env_features, sequences):
+        # 1. Process environment into initial RNN state
+        h0 = self.env_to_hidden(env_features).unsqueeze(0) # Shape: (1, batch, hidden)
+        
+        # 2. Embed the protein sequence
+        embeds = self.embedding(sequences[:, :-1]) 
+        
+        # 3. Pass through standard RNN
+        rnn_out, _ = self.rnn(embeds, h0)
+        
+        # 4. Predict next amino acid
+        predictions = self.fc(rnn_out)
         return predictions

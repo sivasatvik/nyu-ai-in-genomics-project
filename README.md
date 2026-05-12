@@ -16,7 +16,7 @@ python src/main.py
 
 ```bash
 python src/clean_data.py \
-  --input-parquet combined_uniprot_and_gold_environmental_data_10K.parquet \
+  --input-parquet data/combined_uniprot_and_gold_environmental_data_10K.parquet \
   --output-csv combined_uniprot_and_gold_environmental_data_10K.csv \
   --cleaned-output-csv cleaned_environmental_data.csv
 ```

@@ -226,8 +226,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d",
         "--data",
-        default="cleaned_environmental_data_10K.csv",
-        help="Path to input CSV file (default: cleaned_environmental_data_10K.csv)",
+        default="data/cleaned_environmental_data_10K.csv",
+        help="Path to input CSV file (default: data/cleaned_environmental_data_10K.csv)",
     )
     parser.add_argument(
         "-s",

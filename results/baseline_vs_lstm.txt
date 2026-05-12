@@ -1,0 +1,17 @@
+==================================================
+1. STATISTICAL METRICS (VALIDATION SET)
+==================================================
+[LSTM] Loss: 2.4350 | Perplexity: 11.42 | Next-Token Acc: 25.33%
+[RNN]  Loss: 2.6927 | Perplexity: 14.77 | Next-Token Acc: 18.48%
+
+==================================================
+2. BIOLOGICAL METRICS (GENERATED SEQUENCES)
+==================================================
+--- Hot Environment (85°C) ---
+[LSTM] Length: 100 | GRAVY Score: 0.434
+[RNN]  Length: 100 | GRAVY Score: 1.042
+
+--- Cold Environment (-15°C) ---
+[LSTM] Length: 100 | GRAVY Score: -0.419
+[RNN]  Length: 100 | GRAVY Score: 1.979
+==================================================
