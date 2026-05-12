@@ -9,6 +9,7 @@ from model import BaselineRNNGenerator, EnvDataset, VOCAB_SIZE, CHAR_TO_IDX, IDX
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import numpy as np
@@ -62,7 +63,31 @@ def generate_protein(model, scaler, temp_c, precip, radiation, device, max_len=1
         return "".join(generated_sequence)
 
 
-def main(csv_path, scaler_path, checkpoint_path):
+def save_loss_plot(train_losses, val_losses, plot_path):
+    """Save a training/validation loss curve to disk."""
+    if not plot_path:
+        return
+
+    plot_dir = os.path.dirname(plot_path)
+    if plot_dir:
+        os.makedirs(plot_dir, exist_ok=True)
+
+    epochs = range(1, len(train_losses) + 1)
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, train_losses, label="Train Loss", linewidth=2)
+    plt.plot(epochs, val_losses, label="Validation Loss", linewidth=2)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Baseline Training Loss Curve")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300)
+    plt.close()
+    print(f"Saved loss plot to {plot_path}")
+
+
+def main(csv_path, scaler_path, checkpoint_path, loss_plot_path="figures/train_baseline_loss_curve.png"):
     """Main training and inference pipeline."""
     # Load data and prepare features
     df = pd.read_csv(csv_path)
@@ -115,6 +140,8 @@ def main(csv_path, scaler_path, checkpoint_path):
     EPOCHS = 100 # Increase to 50-100 for actual training
 
     best_val_loss = float('inf') # Keep track of the best loss
+    train_losses = []
+    val_losses = []
 
     print(f"Training on {device}...")
     for epoch in range(EPOCHS):
@@ -156,6 +183,8 @@ def main(csv_path, scaler_path, checkpoint_path):
                 total_val_loss += loss.item()
                 
         avg_val_loss = total_val_loss / len(val_loader)
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
         
         # --- CHECKPOINTING LOGIC ---
         if avg_val_loss < best_val_loss:
@@ -167,6 +196,8 @@ def main(csv_path, scaler_path, checkpoint_path):
             status = ""
             
         print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} {status}")
+
+    save_loss_plot(train_losses, val_losses, loss_plot_path)
 
     # ==========================================
     # 2. INFERENCE: LOADING CHECKPOINT AND TESTING
@@ -241,5 +272,11 @@ if __name__ == "__main__":
         default="checkpoints/best_baseline_alien_protein_model_10K.pt",
         help="Path to model checkpoint file (default: checkpoints/best_baseline_alien_protein_model_10K.pt)",
     )
+    parser.add_argument(
+        "-l",
+        "--loss-plot",
+        default="figures/train_baseline_loss_curve.png",
+        help="Path to save the training loss plot (default: figures/train_baseline_loss_curve.png)",
+    )
     args = parser.parse_args()
-    main(args.data, args.scaler, args.checkpoint)
+    main(args.data, args.scaler, args.checkpoint, args.loss_plot)

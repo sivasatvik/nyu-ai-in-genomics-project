@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import numpy as np
 import joblib
+import argparse
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
 
 # Import your models and dataset definitions
@@ -73,11 +74,34 @@ def get_gravy_score(sequence):
 # RUN EVALUATION
 # ==========================================
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evaluate conditional protein generators")
+    parser.add_argument(
+        "--data",
+        default="data/cleaned_environmental_data_10K.csv",
+        help="Path to the evaluation CSV file (default: data/cleaned_environmental_data_10K.csv)",
+    )
+    parser.add_argument(
+        "--scaler",
+        default="checkpoints/environmental_scaler_10K.pkl",
+        help="Path to the fitted scaler pickle (default: checkpoints/environmental_scaler_10K.pkl)",
+    )
+    parser.add_argument(
+        "--lstm-checkpoint",
+        default="checkpoints/best_alien_protein_model_10K.pt",
+        help="Path to the conditional LSTM checkpoint (default: checkpoints/best_alien_protein_model_10K.pt)",
+    )
+    parser.add_argument(
+        "--baseline-checkpoint",
+        default="checkpoints/best_baseline_alien_protein_model_10K.pt",
+        help="Path to the baseline RNN checkpoint (default: checkpoints/best_baseline_alien_protein_model_10K.pt)",
+    )
+    args = parser.parse_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Evaluating on {device}...")
 
     # 1. Load Data for Validation
-    df = pd.read_csv('data/cleaned_environmental_data_10K.csv')
+    df = pd.read_csv(args.data)
     
     # Re-calculate aggregates if necessary (like in your train script)
     tavg_cols = [f'tavg_{str(i).zfill(2)}' for i in range(1, 13)]
@@ -92,7 +116,7 @@ if __name__ == "__main__":
     Y = df['Sequence'].tolist()
 
     # Load scaler and scale data
-    scaler = joblib.load('checkpoints/environmental_scaler_10K.pkl')
+    scaler = joblib.load(args.scaler)
     X_scaled = scaler.transform(X)
 
     # We only care about the Validation set for accurate evaluation
@@ -107,8 +131,8 @@ if __name__ == "__main__":
     rnn_model = BaselineRNNGenerator(INPUT_DIM, EMBED_SIZE, HIDDEN_SIZE, VOCAB_SIZE).to(device)
 
     # Load Weights (Change paths to wherever your actual checkpoints are saved)
-    lstm_model.load_state_dict(torch.load('checkpoints/best_alien_protein_model_10K.pt', map_location=device, weights_only=True))
-    rnn_model.load_state_dict(torch.load('checkpoints/best_baseline_alien_protein_model_10K.pt', map_location=device, weights_only=True))
+    lstm_model.load_state_dict(torch.load(args.lstm_checkpoint, map_location=device, weights_only=True))
+    rnn_model.load_state_dict(torch.load(args.baseline_checkpoint, map_location=device, weights_only=True))
 
     # 3. Statistical Evaluation
     print("\n" + "="*50)
@@ -135,15 +159,43 @@ if __name__ == "__main__":
     env_cold = {"temp_c": -15.0, "precip": 500.0, "radiation": 5000.0}
 
     print("--- Hot Environment (85°C) ---")
-    lstm_hot_seq = generate_protein(lstm_model, scaler, **env_hot, device=device)
-    rnn_hot_seq = generate_protein_baseline(rnn_model, scaler, **env_hot, device=device)
+    lstm_hot_seq = generate_protein(
+        lstm_model,
+        scaler,
+        temp_c=env_hot["temp_c"],
+        precip=env_hot["precip"],
+        radiation=env_hot["radiation"],
+        device=device,
+    )
+    rnn_hot_seq = generate_protein_baseline(
+        rnn_model,
+        scaler,
+        temp_c=env_hot["temp_c"],
+        precip=env_hot["precip"],
+        radiation=env_hot["radiation"],
+        device=device,
+    )
     
     print(f"[LSTM] Length: {len(lstm_hot_seq):03d} | GRAVY Score: {get_gravy_score(lstm_hot_seq):.3f}")
     print(f"[RNN]  Length: {len(rnn_hot_seq):03d} | GRAVY Score: {get_gravy_score(rnn_hot_seq):.3f}")
 
     print("\n--- Cold Environment (-15°C) ---")
-    lstm_cold_seq = generate_protein(lstm_model, scaler, **env_cold, device=device)
-    rnn_cold_seq = generate_protein_baseline(rnn_model, scaler, **env_cold, device=device)
+    lstm_cold_seq = generate_protein(
+        lstm_model,
+        scaler,
+        temp_c=env_cold["temp_c"],
+        precip=env_cold["precip"],
+        radiation=env_cold["radiation"],
+        device=device,
+    )
+    rnn_cold_seq = generate_protein_baseline(
+        rnn_model,
+        scaler,
+        temp_c=env_cold["temp_c"],
+        precip=env_cold["precip"],
+        radiation=env_cold["radiation"],
+        device=device,
+    )
     
     print(f"[LSTM] Length: {len(lstm_cold_seq):03d} | GRAVY Score: {get_gravy_score(lstm_cold_seq):.3f}")
     print(f"[RNN]  Length: {len(rnn_cold_seq):03d} | GRAVY Score: {get_gravy_score(rnn_cold_seq):.3f}")

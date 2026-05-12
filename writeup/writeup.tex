@@ -8,7 +8,7 @@
 \usepackage{enumitem}
 \usepackage{caption}
 \geometry{margin=1in}
-\graphicspath{{../}{./}}
+\graphicspath{{../figures/}{../}{./}}
 \emergencystretch=3em
 
 \title{Environmental Conditioning of Protein Sequence Generation\\
@@ -156,6 +156,12 @@ and projected to the 23-token vocabulary at each position. During training, the
 model learns next-token prediction: given the environment and all previous
 tokens, it predicts the next amino acid.
 
+For comparison, \texttt{src/train\_baseline.py} trains a simpler conditional
+RNN baseline with the same environmental inputs, token vocabulary, embedding
+size, hidden size, optimizer, and train/validation split. The baseline receives
+the environmental vector only as the initial recurrent hidden state, while the
+LSTM model uses both a hidden and cell state.
+
 \subsection{Training and Evaluation Protocol}
 \texttt{src/train.py} drops rows missing sequence, NASA temperature, annual
 precipitation, or annual solar radiation. It then splits rows into 90\% training
@@ -164,12 +170,12 @@ learning rate 0.001 for 100 epochs, batch size 32, and cross-entropy loss over
 next-token predictions. Padding tokens are ignored in the loss. The best model
 by validation loss is saved to the requested checkpoint path.
 
-This split prevents exact row overlap between training and validation, but it is
-not a stringent biological generalization test. Multiple proteins from the same
-organism, taxonomy ID, or geographic location can appear on both sides of the
-split. Therefore, validation loss measures held-out row prediction under random
-splitting, not generalization to unseen species, protein families, or
-environments.
+\texttt{src/evaluation.py} evaluates the saved LSTM and RNN checkpoints on the
+same validation split. It reports cross-entropy loss, perplexity, next-token
+accuracy excluding padding, and GRAVY scores for generated hot and cold
+environment examples. This split prevents exact row overlap between training and
+validation, but it is not a stringent biological generalization test because
+related organisms or protein families can appear on both sides.
 
 \section{Results}
 \subsection{End-to-End Pipeline}
@@ -181,24 +187,82 @@ Streamlit interface. The repository currently contains trained checkpoints for
 the 5K and 10K data runs, plus a fitted environmental scaler.
 
 \subsection{Sequence Space Visualization}
-\texttt{src/visualization.py} provides an exploratory check of whether the
-sequence dataset contains visible environmental structure. It converts each
-protein sequence into 3-mer TF-IDF features, reduces those features to two
-principal components, and colors the resulting points by environmental
-variables. This is not a model-evaluation metric, but it is useful for checking
-whether obvious climate gradients or data artifacts appear in sequence feature
-space.
+\texttt{src/visualization\_pca.py} and \texttt{src/visualization\_tsne.py}
+provide exploratory checks of whether the sequence dataset contains visible
+environmental structure. Both scripts convert each protein sequence into 3-mer
+TF-IDF features and color the resulting points by environmental variables. PCA
+gives a linear low-dimensional summary, while t-SNE first reduces the TF-IDF
+matrix to 50 dimensions with truncated SVD and then emphasizes local sequence
+neighborhoods in two dimensions. These plots are not model-evaluation metrics,
+but they help reveal climate gradients or data artifacts in sequence feature
+space (Figures~\ref{fig:sequence-space-pca} and \ref{fig:sequence-space-tsne}).
 
-\begin{figure}[htbp]
+\begin{figure}[ht]
+\centering
 \centering
 \includegraphics[width=\linewidth]{environmental_sequence_pca_5plots.png}
-\caption{Exploratory protein sequence space from the cleaned dataset. Each
-point is one protein sequence represented by 3-mer TF-IDF features and reduced
-to two principal components. Panels color the same points by NASA collection-day
-temperature, WorldClim annual temperature, WorldClim annual precipitation,
-WorldClim annual solar radiation, and NASA collection-day radiation.}
-\label{fig:pca}
+\caption{Exploratory sequence-space PCA visualization. PCA gives a linear
+two-dimensional summary of 3-mer TF-IDF protein features, so broad gradients
+reflect large-scale differences in amino-acid 3-mer composition. In the
+plot, each point is one protein sequence, and the five panels color the same
+points by NASA surface temperature, WorldClim annual temperature, annual
+precipitation, annual solar radiation, and NASA radiation.}
+\label{fig:sequence-space-pca}
 \end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\linewidth]{environmental_sequence_tsne_5plots.png}
+\caption{Exploratory sequence-space TSNE visualizations. t-SNE
+uses the summary of 3-mer TF-IDF features but emphasizes local neighborhoods, so compact
+clusters indicate sequences with similar short amino-acid patterns. In the
+plot, each point is one protein sequence, and the five panels color the same
+points by NASA surface temperature, WorldClim annual temperature, annual
+precipitation, annual solar radiation, and NASA radiation.}
+\label{fig:sequence-space-tsne}
+\end{figure}
+
+The TSNE plots show some visible clustering and climate gradients, but the PCA plots do not show much structure. This suggests that local sequence neighborhoods may be more environmentally structured than global linear projections of sequence space. However, these visualizations are not rigorous evaluations of model performance; they are only intended to reveal broad patterns in the training data.
+
+\subsection{Baseline Comparison}
+The LSTM outperformed the simpler RNN baseline on the validation split
+(Table~\ref{tab:baseline}). It achieved lower cross-entropy loss, lower
+perplexity, and higher next-token accuracy. For generated sequences, both models
+produced length-100 examples under the tested hot and cold environments. GRAVY
+is the grand average of hydropathy: positive values indicate more hydrophobic
+sequences, while negative values indicate more hydrophilic sequences. The LSTM
+generated a hydrophobic hot-environment sequence and a hydrophilic
+cold-environment sequence, while the RNN baseline generated strongly
+hydrophobic sequences in both cases.
+
+\begin{table}[htbp]
+\centering
+\caption{Validation and generated-sequence metrics from
+\texttt{results/baseline\_vs\_lstm.txt}. Statistical metrics were computed on
+the 10\% validation split; GRAVY metrics were computed from one generated
+sequence per model for each test environment.}
+\label{tab:baseline}
+\begin{tabular}{lrrr}
+\toprule
+Model & Loss & Perplexity & Next-token accuracy \\
+\midrule
+LSTM & 2.4350 & 11.42 & 25.33\% \\
+RNN baseline & 2.6927 & 14.77 & 18.48\% \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.75em}
+\begin{tabular}{llrr}
+\toprule
+Environment & Model & Generated length & GRAVY \\
+\midrule
+Hot, 85$^\circ$C & LSTM & 100 & 0.434 \\
+Hot, 85$^\circ$C & RNN baseline & 100 & 1.042 \\
+Cold, -15$^\circ$C & LSTM & 100 & -0.419 \\
+Cold, -15$^\circ$C & RNN baseline & 100 & 1.979 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Generation Interface}
 The trained model can generate a sequence from user-specified temperature,
@@ -223,19 +287,18 @@ microenvironment where every organism grew. Second, proteins are strongly shaped
 by function and ancestry; a random row split can overestimate performance if
 closely related organisms or similar protein families appear in both training
 and validation. Third, the model generates short prefixes of proteins because
-training truncates sequences to 200 tokens. Finally, the current code does not
-save final validation loss, per-residue accuracy, edit distance, or biological
-plausibility metrics to a results table. Those metrics should be added before
-making strong claims about model quality.
+training truncates sequences to 200 tokens. Finally, the current evaluation
+contains next-token and simple hydropathy metrics, but not edit distance,
+protein-family holdout tests, or functional validation. Those metrics should be
+added before making strong claims about model quality.
 
 The next most important improvements are therefore methodological rather than
-architectural: save training curves and validation metrics, split data by
-taxonomy ID or protein family, add sequence-quality filters for nonstandard
-amino acids, compare against an unconditional LSTM baseline, and evaluate
-generated sequences with protein-level summaries such as amino-acid
-composition, hydrophobicity, and predicted stability. SoilGrids features are
-also already implemented and could be added to the model input once their
-coverage and units are checked.
+architectural: save training curves, split data by taxonomy ID or protein
+family, add sequence-quality filters for nonstandard amino acids, compare
+against an unconditional sequence model, and evaluate generated sequences with
+additional protein-level summaries such as amino-acid composition and predicted
+stability. SoilGrids features are also already implemented and could be added to
+the model input once their coverage and units are checked.
 
 \section{Reproducibility}
 The main commands are:
@@ -257,9 +320,10 @@ streamlit run src/app.py -- \
 \end{verbatim}
 The WorldClim GeoTIFFs are expected under \texttt{data/worldclim/}. The main
 scripts are organized under \texttt{src/}; checkpoints and the scaler are stored
-under \texttt{checkpoints/}; exploratory figures are written to the repository
-root by \texttt{src/visualization.py}. External API calls require internet
-access and may change if source services update their schemas or availability.
+under \texttt{checkpoints/}; exploratory figures are stored under
+\texttt{figures/}; evaluation summaries are stored under \texttt{results/}.
+External API calls require internet access and may change if source services
+update their schemas or availability.
 
 \begin{thebibliography}{9}
 \bibitem{gold}
