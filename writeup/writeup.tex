@@ -317,7 +317,7 @@ should split by taxonomy or protein family, add an unconditional baseline, add
 more environmental variables where reliable, and validate generated proteins
 with folding, stability, and functional assays before making design claims.
 
-\section{Code Availability}
+\section{Code}
 The source code for this project is available on GitHub at
 \url{https://github.com/sivasatvik/nyu-ai-in-genomics-project}. The repository
 includes the data-processing scripts, model training code, analysis,
@@ -351,7 +351,7 @@ H7FWB6 & Flavobacterium frigoris (strain PS1) & MKILKR... & 237 & -77.6167 & 162
 }
 \end{table}
 
-\section{Reproducibility and Supplementary Materials}
+\section{Reproducibility}
 All experiments were run from the project root. These exact commands reproduce
 the main pipeline (assumes a Python virtual environment is activated at
 `.venv'). Replace paths if you use different filenames or locations. Since 
@@ -479,8 +479,8 @@ Due to the low availability of extreme heat and hyper-humid examples in the trai
 The following is the output of the extreme conditions file, produced
 by \texttt{src/check\_extreme\_sites.py}. The per-condition examples show a strong representation of cold Antarctic-like
 locations (AvgTemp ≈ -20 to -22°C) and multiple high-radiation, hyper-arid
-rows (SRad $>$ 21,000 kJ/m²/day) that often co-occur with very low precipitation.
-Notably, the script found no clear "Extreme Heat" ($>$50°C) or "Hyper-Humid"
+rows (SRad $>$ 18,000 kJ/m²/day) that often co-occur with very low precipitation.
+Notably, the script found no clear ``Extreme Heat'' ($>$50°C) or ``Hyper-Humid''
 examples in the top examples, indicating these regimes are rare or absent in
 the cleaned dataset. For modeling, this means the training set provides
 substantial coverage of cold and high-radiation niches but less direct
