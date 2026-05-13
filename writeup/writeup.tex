@@ -102,7 +102,8 @@ In the cleaned 10K dataset, 8,376 rows have NASA temperature and 8,296 rows
 have NASA radiation. Protein lengths range from 6 to 11,872 amino acids, with a
 mean of 450 amino acids. During training, sequences are truncated to 198 amino
 acids plus start and end tokens, so very long proteins are represented only by
-their N-terminal prefix.
+their N-terminal prefix. A rendered snapshot of representative cleaned rows is
+included in Appendix~\ref{app:cleaned-sample}.
 
 \section{Methods}
 \subsection{Inputs and Encoding}
@@ -149,11 +150,9 @@ Exoplanet Archive using temperature and insolation \cite{nasaexo}.
 The cleaned dataset contains a substantial extreme-Earth subset. Using thresholds
 of annual average temperature below $-10^\circ$C or above $50^\circ$C, annual precipitation below
 50 mm or above 4,000 mm, or mean solar radiation above 18,000 kJ/m$^2$/day, we
-found 2,716 extreme rows out of 8,631 cleaned rows (31.47\%). The first rows in
-the extreme report are cold Antarctic-like sites around $-19$ to $-22^\circ$C
-with low annual precipitation. This gives the model some exposure to challenging
+found 2,716 extreme rows out of 8,631 cleaned rows (31.47\%). The data is a little bit skewed towards the cold extremes. This gives the model some exposure to challenging
 Earth environments, but not necessarily to exoplanet-like conditions. The full
-script output is included in Appendix~\ref{app:extreme}.
+script output is included in Appendix~\ref{app:extreme}. We plotted the sequence space using PCA and t-SNE on 3-mer TF-IDF features to explore whether environmental variables align with sequence patterns (Figure~\ref{fig:sequence-space}).
 
 \begin{figure}[H]
 \centering
@@ -182,7 +181,7 @@ is exploratory, not proof of causality.
 
 \subsection{Model Performance}
 The LSTM outperformed the simpler RNN baseline on the validation split
-(Table~\ref{tab:baseline}). It had lower loss and perplexity and higher
+(Table~\ref{tab:baseline}). It had lower loss (seen in Figure~\ref{fig:loss-curves}) and perplexity and higher
 next-token accuracy. The generated-sequence GRAVY results were mixed: the LSTM
 produced a near-neutral hot sequence and a very hydrophilic cold sequence,
 whereas the RNN baseline produced a one-residue hot sequence and a hydrophobic
@@ -191,8 +190,7 @@ can terminate generation too early under extrapolated inputs.
 
 \begin{table}[H]
 \centering
-\caption{Validation and generation metrics from
-\texttt{results/baseline\_vs\_lstm\_new.txt}. Statistical metrics use the 10\%
+\caption{Validation and generation metrics results. Statistical metrics use the 10\%
 validation split; GRAVY uses one generated sequence per model and condition.}
 \label{tab:baseline}
 \begin{tabular}{lrrr}
@@ -277,6 +275,11 @@ how far exoplanet prompts shift away from Earth training data. The LSTM is
 better than the RNN baseline on next-token prediction, but 25.42\% accuracy is
 still modest and does not establish biological function.
 
+The extreme-environment subset is also skewed toward cold conditions, so the
+model sees many more Antarctic-like examples than hot or humid ones. A larger
+and better balanced set of conditional examples across all regimes could reduce
+that skew and likely improve how well the model responds to non-cold prompts.
+
 The largest scientific limitation is distribution shift. Earth extremophiles
 cover many difficult habitats, but exoplanets can differ in atmospheric
 composition, pressure, liquid-water availability, gravity, orbital distance,
@@ -295,8 +298,39 @@ should split by taxonomy or protein family, add an unconditional baseline, add
 more environmental variables where reliable, and validate generated proteins
 with folding, stability, and functional assays before making design claims.
 
+\section{Code Availability}
+The source code for this project is available on GitHub at
+\url{https://github.com/sivasatvik/nyu-ai-in-genomics-project}. The repository
+includes the data-processing scripts, model training code, analysis,
+and the writeup sources used to produce this report.
+
 \clearpage
 \appendix
+
+\section{Cleaned CSV Snapshot}
+\label{app:cleaned-sample}
+
+Table~\ref{tab:cleaned-sample} shows a compact snapshot of the first five rows
+from \texttt{cleaned\_environmental\_data\_10K.csv}. It is included as a
+readable appendix sample of the cleaned training data.
+
+\begin{table}[H]
+\centering
+\caption{Snapshot of representative rows from the cleaned dataset.}
+\label{tab:cleaned-sample}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lllllllllll}
+\toprule
+Entry & Organism\_Name & Sequence & GOLD\_NCBI\_TAX\_ID & ORGANISM LATITUDE & ORGANISM LONGITUDE & NASA\_Temp\_C & NASA\_Radiation & prec\_01 & srad\_01 & tavg\_01 \\
+\midrule
+P50379 & Mantoniella squamata (Unicellular alga) & KNMITGAA... & 13607 & -78.8333 & 163.0 & -7.21 & 10.3841 & 1 & 32821 & -7.1842103 \\
+P81988 & Ochromonas danica (Golden alga) (Chlorochromonas danica) & XYAFGI... & 2985 & -77.8333 & 163.0 & -20.94 & 11.6556 & 1 & 33233 & -5.758 \\
+A0A7D5JNZ7 & Nostoc sp. (strain HG1)  & MLKINR... & 2593659 & -77.73 & 162.47 & -13.72 & 7.1873 & 1 & 32946 & -9.52625 \\
+H7FWB6 & Flavobacterium frigoris (strain PS1) & MKILKR... & 237 & -77.6167 & 162.983 & -8.67 & 10.4016 & 1 & 32889 & -8.49925 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
 
 \section{Reproducibility and Supplementary Materials}
 All experiments were run from the project root. These exact commands reproduce
@@ -419,7 +453,7 @@ the same low-complexity pattern also increases the chance of profile matches
 that do not imply a functional folded protein. The Cytochrome c class II hits
 are likely false positives caused by repetitive composition rather than true
 electron-transfer protein generation.
-Due to the low availability of extreme heat and hyper-humid examples in the training data, the model may have defaulted to generating low-complexity alanine-rich sequences that match the antifreeze profile, which is a known issue with sequence generators when prompted with out-of-distribution conditions.
+Due to the low availability of extreme heat and hyper-humid examples in the training data, the model may have defaulted to generating low-complexity alanine-rich sequences that match the antifreeze profile, which is a known issue with sequence generators when prompted with out-of-distribution conditions. Perhaps with more extreme heat examples in the training set, the model would have learned to generate more hydrophobic, thermostable motifs instead of defaulting to antifreeze-like patterns.
 
 \section{Extreme Earth Site Output}
 \label{app:extreme}
