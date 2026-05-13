@@ -11,54 +11,82 @@
 \geometry{margin=1in}
 \graphicspath{{../figures/}{../}{./}}
 \emergencystretch=3em
+\captionsetup{font=small}
+\setlist{nosep}
 
-\title{Environmental Conditioning of Protein Sequence Generation\\
-       from GOLD, UniProt, NASA POWER, and WorldClim}
-\author{AI in Genomics Project}
+\title{Environmental Adaptation Modeling: Predicting Alien DNA\\
+and Protein Sequences Through Environmental Conditioning}
+% \author{AI in Genomics Project}
 \date{}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This project asks whether environmental measurements attached to biological sampling locations can be used to condition a protein sequence generator. The implemented code builds a dataset by linking GOLD organism metadata to reviewed UniProt protein sequences, enriching sample coordinates with NASA POWER daily weather and WorldClim monthly climate rasters, cleaning invalid numerical sentinels, and training a recurrent neural network that generates amino-acid sequences from environmental inputs. The current model should be treated as a proof of concept: it demonstrates an end-to-end reproducible pipeline and an interactive Streamlit interface, but it does not yet prove that generated sequences are biologically functional or causally adapted to the environment.
+This project tests whether environmental measurements from biological sampling
+locations can condition a protein sequence generator. We link GOLD organism
+metadata to reviewed UniProt protein sequences, enrich sample coordinates with
+NASA POWER weather and WorldClim climate variables, remove corrupted numerical
+rows, and train a recurrent neural network to generate amino-acid sequences from
+temperature, precipitation, and solar-radiation inputs. We also compare Earth
+training environments with exoplanet conditions to measure how far the model is
+being asked to extrapolate. The system is a proof of concept: it builds a
+reproducible genomic-AI pipeline, but generated sequences are not yet validated
+as functional proteins.
 \end{abstract}
 
 \section{Background}
-Proteins are chains of amino acids that fold into molecular machines. Their sequences are constrained by evolution, organism history, and environment. For example, proteins from organisms living in hot or dry habitats may be under different selective pressures than proteins from temperate habitats. Our goal is not to model all of evolution, but to test a narrower machine-learning question: can a model learn a relationship between coarse environmental variables and the distribution of protein sequences observed in organisms sampled from those environments?
+Proteins are chains of amino acids that fold into molecular machines. Their
+sequences are shaped by ancestry, function, and physical environment. For
+example, proteins from organisms living in cold, dry, hot, or high-radiation
+habitats may show different sequence patterns because those environments place
+different stresses on protein stability and cellular survival.
 
-The project combines four public resources. GOLD provides organism-level sample metadata, including taxonomy IDs and geographic coordinates when available \cite{gold}. UniProt provides reviewed protein sequences for each taxonomy ID \cite{uniprot}. NASA POWER provides daily surface temperature and radiation for the sample location/date \cite{nasa}. WorldClim provides long-term monthly climate rasters, including precipitation, solar radiation, average temperature, and vapour pressure \cite{worldclim}. SoilGrids querying is implemented in the code, but the current merged training table does not include the returned pH or soil-carbon fields as model inputs \cite{soilgrids}.
+Our project combines four public resources. GOLD provides organism metadata,
+including taxonomy IDs and geographic coordinates when available \cite{gold}.
+UniProt provides reviewed protein sequences for those taxonomy IDs
+\cite{uniprot}. NASA POWER provides daily surface temperature and radiation
+\cite{nasa}. WorldClim provides long-term monthly climate rasters for
+precipitation, solar radiation, average temperature, and vapour pressure
+\cite{worldclim}. We also implemented SoilGrids pH and soil-carbon retrieval,
+but those variables were not used in the final model because coverage and units
+still need validation \cite{soilgrids}.
 
 \section{Motivation}
-Most protein generation models are conditioned on sequence context, structure, or textual prompts. We explored a different conditioning signal: the physical environment associated with the organism from which a protein was sampled. If such a signal is useful, it could eventually help generate candidate protein sequences for unusual environmental settings. The current project tests the infrastructure and modeling feasibility of this idea rather than claiming a validated biological design tool.
+Most protein generators are conditioned on sequence context, structure, or text
+prompts. We explored a different question: can a model use the physical
+environment associated with an organism to generate protein-like amino-acid
+sequences? This matters because Earth contains organisms from extreme habitats,
+but exoplanets can have much broader temperature and radiation regimes. Our
+hypothesis was that a conditional sequence model would learn some environmental
+signal from Earth data, while an exoplanet comparison would reveal where the
+model is extrapolating beyond its training distribution.
 
 \section{Data}
-\subsection{Source Data and Linking}
-The pipeline begins with the Organism data in GOLD data \cite{gold}. GOLD contains 530,160 organism rows; 64,665 rows have both latitude and longitude. The code sorts these coordinate-bearing rows and queries UniProt using each row's NCBI taxonomy ID.
+\subsection{Source Data}
+The pipeline starts with GOLD organism records. The local cached GOLD table has
+530,160 rows, of which 64,665 have both latitude and longitude. For each
+coordinate-bearing taxonomy ID, the code queries the UniProt REST API for up to
+five reviewed protein entries and retrieves accession, entry name, organism
+name, and sequence. These protein rows are joined back to GOLD by NCBI taxonomy
+ID.
 
-For each taxonomy ID, we call the UniProt REST search API for up to five reviewed protein entries. The current query retrieves accession, entry name, organism name, and sequence. These protein rows are then joined back to GOLD by taxonomy ID and enriched by geographic location.
+Each unique location/date is then enriched with NASA POWER daily temperature
+(\texttt{NASA\_Temp\_C}) and radiation (\texttt{NASA\_Radiation}). If a GOLD
+collection date is missing or unparseable, the code uses 2015-01-01 as a
+fallback. WorldClim rasters add monthly precipitation, solar radiation, average
+temperature, and vapour pressure. The cleaning script removes rows containing
+common no-data values such as \texttt{-9999}, \texttt{-32768}, \texttt{32767},
+\texttt{65535}, or values larger than \texttt{1e30}.
 
-\subsection{Environmental Covariates}
-Each unique latitude, longitude, and collection-date triple is enriched with:
-\begin{itemize}[nosep]
-    \item NASA POWER daily temperature at 2 meters and shortwave radiation. These are stored as \texttt{NASA\_Temp\_C} and \texttt{NASA\_Radiation}. If GOLD lacks a parseable collection date, the code uses 2015-01-01 as a fallback date.
-    \item WorldClim monthly precipitation (\texttt{prec\_01}--\texttt{prec\_12}), solar radiation (\texttt{srad\_01}--\texttt{srad\_12}), average temperature (\texttt{tavg\_01}--\texttt{tavg\_12}), and vapour pressure (\texttt{vapr\_01}--\texttt{vapr\_12}) sampled from local GeoTIFF rasters.
-    \item SoilGrids pH and soil organic carbon are fetchable, but we are not using this information to train the model because the data is sparse and the units are not yet verified.
-\end{itemize}
-
-\subsection{Data Collection and Cleaning Challenges}
-With the above data, we additionally removed rows containing common no-data or overflow sentinels in any numeric column, including \texttt{-9999}, \texttt{-32768}, \texttt{32767}, \texttt{65535}, or values larger than \texttt{$1e^{30}$} in magnitude.
-
-The data assembly process required substantial manual effort. GOLD contains organism metadata, but geographic coordinates are sparsely populated. UniProt API queries have rate limits and inconsistent response schemas. NASA POWER and WorldClim APIs required careful handling of edge cases: missing date records, out-of-bounds geographic queries, and raster files with inconsistent data types. Multiple iterations of validation logic were needed to identify and remove corrupted rows without discarding valid biological samples. This process illustrates a common challenge in multi-source genomics projects: clean, streamlined data is rarely available off-the-shelf, and integration work often dominates the initial project timeline. Table~\\ref{tab:data} summarizes the largest cleaned dataset currently present in the repository.
-
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
-\caption{Current local dataset used by the implemented training pipeline. The
-``raw merged'' row refers to data that has been merged from GOLD, UniProt, NASA POWER, and WorldClim but has not yet been cleaned for numeric sentinels. The ``cleaned'' row refers to the same data after removing rows with corrupted numeric values. Unique taxonomy IDs and UniProt accessions are counted after cleaning, so the cleaned dataset is a subset of the raw merged dataset.}
+\caption{Dataset size after linking GOLD, UniProt, NASA POWER, and WorldClim.
+The cleaned dataset is the version used for model training and evaluation.}
 \label{tab:data}
 \begin{tabular}{lrrrr}
 \toprule
-Dataset & Rows & Unique taxonomy IDs & Unique UniProt accessions & Median sequence length \\
+Dataset & Rows & Taxonomy IDs & UniProt accessions & Median length \\
 \midrule
 Raw merged & 10,113 & 830 & 8,888 & 381 aa \\
 Cleaned & 8,631 & 720 & 7,809 & 381 aa \\
@@ -66,73 +94,101 @@ Cleaned & 8,631 & 720 & 7,809 & 381 aa \\
 \end{tabular}
 \end{table}
 
-In the cleaned 10K dataset, 8,376 rows have NASA temperature, and 8,296 rows have NASA radiation. Protein sequence lengths range from 6 to 11,872 amino acids, with a mean length of 450 amino acids. During training, sequences are truncated to 198 amino acids plus start and end tokens, so very long proteins are represented only by their N-terminal prefix.
+In the cleaned 10K dataset, 8,376 rows have NASA temperature and 8,296 rows
+have NASA radiation. Protein lengths range from 6 to 11,872 amino acids, with a
+mean of 450 amino acids. During training, sequences are truncated to 198 amino
+acids plus start and end tokens, so very long proteins are represented only by
+their N-terminal prefix.
 
 \section{Methods}
-\subsection{Feature Engineering}
-Initially, we explored using chemical composition features derived from the environment (e.g., major ions, trace elements) as suggested in the project proposal. However, after reviewing the GOLD metadata and environmental APIs, we found that such data is sparsely annotated and difficult to obtain consistently across sampling sites. Instead, we selected three aggregated environmental features that are reliably available from public climate and weather datasets and capture distinct environmental pressures:
+\subsection{Inputs and Encoding}
+We use three environmental input features: NASA daily temperature, WorldClim
+total annual precipitation, and WorldClim mean annual solar radiation. These
+features were chosen because they are available for most samples and represent
+thermal stress, water availability, and radiation exposure. We standardize them
+with a fitted \texttt{StandardScaler}.
 
-\begin{enumerate}[nosep]
-    \item \texttt{NASA\_Temp\_C}: daily NASA POWER temperature for the sample
-    location/date. Temperature is a primary selective pressure on protein
-    stability and metabolism.
-    \item \texttt{Total\_Annual\_Prec}: sum of the 12 WorldClim monthly
-    precipitation values. Precipitation influences organism desiccation stress
-    and habitat water availability.
-    \item \texttt{Mean\_Annual\_Solar\_Rad}: mean of the 12 WorldClim monthly
-    solar-radiation values. Solar radiation exerts selective pressure through
-    UV exposure and thermal loading.
-\end{enumerate}
+The output is a protein sequence represented one amino acid at a time. The
+vocabulary has 23 tokens: the 20 standard amino acids plus \texttt{<PAD>},
+\texttt{<SOS>}, and \texttt{<EOS>}. Unknown amino-acid characters are currently
+mapped to \texttt{<PAD>}, which is a limitation because rare residues are not
+modeled explicitly.
 
-Although the training script also computes \texttt{Mean\_Annual\_Temp}, that field is not included in the current model input to avoid feature redundancy with the daily NASA temperature. The three selected numeric features are standardized with scikit-learn's \texttt{StandardScaler}. The fitted scaler is saved and is reused by the Streamlit app for the UI.
+\subsection{Models and Training}
+The main model is a conditional LSTM generator. The three environmental inputs
+are transformed into the LSTM's initial hidden and cell states. The model then
+reads previous amino-acid tokens and predicts the next token at each position.
+It uses 64-dimensional token embeddings, a hidden size of 256, batch size 32,
+Adam with learning rate 0.001, and cross-entropy loss that ignores padding.
 
-\subsection{Sequence Encoding}
-The output sequence is a character-level amino-acid sequence. The vocabulary has 23 tokens: the 20 standard amino acids plus \texttt{<PAD>}, \texttt{<SOS>}, and \texttt{<EOS>}. Each training sequence is truncated to a maximum length of 200 tokens after adding start and end markers. Unknown or nonstandard amino-acid characters are currently mapped to \texttt{<PAD>}; this is simple, but it means rare sequence characters are treated like padding rather than modeled explicitly.
+For comparison, we trained a simpler conditional RNN baseline with the same
+inputs, vocabulary, embedding size, hidden size, optimizer, and row split. Both
+models use a 90\% training and 10\% validation split with
+\texttt{random\_state=42}. This prevents exact row overlap, but it is not a
+strict biological holdout because related organisms or similar protein families
+may appear in both sets.
 
-\subsection{Model Architecture}
-The implemented model is a conditional LSTM protein generator. The standardized three-dimensional environmental vector is passed through two learned linear layers. One initializes the LSTM hidden state and the other initializes the LSTM cell state. The amino-acid tokens are embedded into 64-dimensional vectors, processed by a single-layer LSTM with hidden size 256, and projected to the 23-token vocabulary at each position. During training, the model learns next-token prediction: given the environment and all previous tokens, it predicts the next amino acid.
-
-For comparison, the baseline model trains a simpler conditional RNN baseline with the same environmental inputs, token vocabulary, embedding size, hidden size, optimizer, and train/validation split. The baseline receives the environmental vector only as the initial recurrent hidden state, while the LSTM model uses both a hidden and cell state.
-
-\subsection{Training and Evaluation Protocol}
-The training script drops rows missing sequence, NASA temperature, annual precipitation, or annual solar radiation. It then splits rows into 90\% training and 10\% validation using \texttt{random\_state=42}. Training uses Adam with learning rate 0.001 for 100 epochs, batch size 32, and cross-entropy loss over next-token predictions. Padding tokens are ignored in the loss. The best model by validation loss is saved to the requested checkpoint path.
-
-The evaluation script evaluates the saved LSTM and RNN checkpoints on the same validation split. It reports cross-entropy loss, perplexity, next-token accuracy excluding padding, and GRAVY scores for generated hot and cold environment examples. This split prevents exact row overlap between training and validation, but it is not a stringent biological generalization test because related organisms or protein families can appear on both sides.
+\subsection{Evaluation}
+We report validation cross-entropy loss, perplexity, and next-token accuracy
+excluding padding. Perplexity measures how many plausible next tokens the model
+is effectively choosing among; lower is better. We also generate one hot and one
+cold example sequence and compute GRAVY, the grand average of hydropathy.
+Positive GRAVY values are more hydrophobic; negative values are more
+hydrophilic. We additionally generated six 100-amino-acid sequences across
+temperate, cold, hot, desert, and ice-moon settings and submitted them to
+InterProScan for protein-family annotation \cite{interpro}. Finally, we compare
+Earth training environments against confirmed exoplanets from the NASA
+Exoplanet Archive using temperature and insolation \cite{nasaexo}.
 
 \section{Results}
-\subsection{End-to-End Pipeline}
-The main result is a working end-to-end pipeline. We start with a merged protein/environment table, remove corrupted numeric rows, train and checkpoint the conditional LSTM, and loads the checkpoint and scaler into an interactive Streamlit interface. The repository currently contains trained checkpoints for the 5K and 10K data runs, plus a fitted environmental scaler.
+\subsection{Data Distribution}
+The cleaned dataset contains a substantial extreme-Earth subset. Using thresholds
+of annual average temperature below $-10^\circ$C, annual precipitation below
+50 mm or above 4,000 mm, or mean solar radiation above 18,000 kJ/m$^2$/day, we
+found 2,716 extreme rows out of 8,631 cleaned rows (31.47\%). The first rows in
+the extreme report are cold Antarctic-like sites around $-19$ to $-22^\circ$C
+with low annual precipitation. This gives the model some exposure to challenging
+Earth environments, but not necessarily to exoplanet-like conditions.
 
-\subsection{Sequence Space Visualization}
-PCA and TSNE visualizations provide exploratory checks of whether the sequence dataset contains visible environmental structure. Both scripts convert each protein sequence into 3-mer TF-IDF features and color the resulting points by environmental variables. PCA gives a linear low-dimensional summary, while t-SNE first reduces the TF-IDF matrix to 50 dimensions with truncated SVD and then emphasizes local sequence neighborhoods in two dimensions. These plots are not model-evaluation metrics, but they help reveal climate gradients or data artifacts in sequence feature space (Figures~\ref{fig:sequence-space-pca} and \ref{fig:sequence-space-tsne}).
-
-The TSNE plots show some visible clustering and climate gradients, but the PCA plots do not show much structure. This suggests that local sequence neighborhoods may be more environmentally structured than global linear projections of sequence space. However, these visualizations are not rigorous evaluations of model performance; they are only intended to reveal broad patterns in the training data.
-
-\begin{figure}[h!bt]
+\begin{figure}[H]
 \centering
-\centering
-\includegraphics[width=0.8\linewidth]{environmental_sequence_pca_5plots.png}
-\caption{Exploratory sequence-space PCA visualization. PCA gives a linear two-dimensional summary of 3-mer TF-IDF protein features, so broad gradients reflect large-scale differences in amino-acid 3-mer composition. In the plot, each point is one protein sequence, and the five panels color the same points by NASA surface temperature, WorldClim annual temperature, annual precipitation, annual solar radiation, and NASA radiation.}
-\label{fig:sequence-space-pca}
+\begin{minipage}{0.49\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{environmental_sequence_pca_5plots.png}
+\end{minipage}
+\hfill
+\begin{minipage}{0.49\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{environmental_sequence_tsne_5plots.png}
+\end{minipage}
+\caption{Exploratory protein sequence space. Each point is one protein
+represented by 3-mer TF-IDF features. Left: PCA gives a linear two-dimensional
+summary, useful for broad global gradients. Right: t-SNE emphasizes local
+neighborhoods, making clusters of similar short amino-acid patterns easier to
+see. In both plots, the five panels color the same points by NASA surface
+temperature, WorldClim annual temperature, annual precipitation, annual solar
+radiation, and NASA radiation.}
+\label{fig:sequence-space}
 \end{figure}
 
-\begin{figure}[h!bt]
+The t-SNE view shows more local clustering than the PCA view, suggesting that
+some short-sequence neighborhoods may align with environmental variables. This
+is exploratory, not proof of causality.
+
+\subsection{Model Performance}
+The LSTM outperformed the simpler RNN baseline on the validation split
+(Table~\ref{tab:baseline}). It had lower loss and perplexity and higher
+next-token accuracy. The generated-sequence GRAVY results were mixed: the LSTM
+produced a near-neutral hot sequence and a very hydrophilic cold sequence,
+whereas the RNN baseline produced a one-residue hot sequence and a hydrophobic
+cold sequence. The one-residue RNN output is a warning sign that the baseline
+can terminate generation too early under extrapolated inputs.
+
+\begin{table}[H]
 \centering
-\includegraphics[width=0.8\linewidth]{environmental_sequence_tsne_5plots.png}
-\caption{Exploratory sequence-space TSNE visualizations. t-SNE uses the summary of 3-mer TF-IDF features but emphasizes local neighborhoods, so compact clusters indicate sequences with similar short amino-acid patterns. In the plot, each point is one protein sequence, and the five panels color the same points by NASA surface temperature, WorldClim annual temperature, annual precipitation, annual solar radiation, and NASA radiation.}
-\label{fig:sequence-space-tsne}
-\end{figure}
-
-\subsection{Extreme Environments in Training Data}
-To assess whether the model encounters sufficient diversity of extreme conditions during training, we analyzed the cleaned dataset using a script. This script identifies rows where the environment exceeds specified thresholds: extreme cold (average annual temperature $<$ $-10^\circ$C), extreme hot (average annual temperature $>$ $50^\circ$C), hyper-arid conditions (annual precipitation $<$ 50 mm/year), hyper-humid conditions (annual precipitation $>$ 4,000 mm/year), or high solar radiation ($>$ 18,000 kJ/m$^2$/day). Of the 8,631 cleaned samples, 2,716 (31.47\%) meet at least one extremeness criterion. These extreme-environment samples are concentrated in Antarctic locations (cold), Arabian Desert regions (arid), and high-altitude or high-latitude areas (high radiation). The presence of this diverse extreme subset suggests the model has access to protein sequences from genuinely challenging habitats, which may help it learn specialized adaptations.
-
-\subsection{Baseline Comparison}
-The LSTM outperformed the simpler RNN baseline on the validation split (Table~\ref{tab:baseline}). It achieved lower cross-entropy loss, lower perplexity, and higher next-token accuracy. For generated sequences, both models produced length-100 examples under the tested hot and cold environments. GRAVY is the grand average of hydropathy: positive values indicate more hydrophobic sequences, while negative values indicate more hydrophilic sequences. The LSTM generated a hydrophobic hot-environment sequence and a hydrophilic cold-environment sequence, while the RNN baseline generated strongly hydrophobic sequences in both cases.
-
-\begin{table}[htbp]
-\centering
-\caption{Validation and generated-sequence metrics from
-\texttt{results/baseline\_vs\_lstm.txt}. Statistical metrics were computed on the 10\% validation split; GRAVY metrics were computed from one generated sequence per model for each test environment.}
+\caption{Validation and generation metrics from
+\texttt{results/baseline\_vs\_lstm\_new.txt}. Statistical metrics use the 10\%
+validation split; GRAVY uses one generated sequence per model and condition.}
 \label{tab:baseline}
 \begin{tabular}{lrrr}
 \toprule
@@ -143,94 +199,268 @@ RNN baseline & 2.7114 & 15.05 & 18.26\% \\
 \bottomrule
 \end{tabular}
 
-\vspace{0.75em}
+\vspace{0.5em}
 \begin{tabular}{llrr}
 \toprule
-Environment & Model & Generated length & GRAVY \\
+Environment & Model & Length & GRAVY \\
 \midrule
-Hot, 85$^\circ$C & LSTM & 100 & 0.434 \\
-Hot, 85$^\circ$C & RNN baseline & 100 & 1.042 \\
-Cold, -15$^\circ$C & LSTM & 100 & -0.419 \\
-Cold, -15$^\circ$C & RNN baseline & 100 & 1.979 \\
+Hot, 85$^\circ$C & LSTM & 100 & 0.019 \\
+Hot, 85$^\circ$C & RNN baseline & 1 & 1.900 \\
+Cold, -15$^\circ$C & LSTM & 100 & -4.353 \\
+Cold, -15$^\circ$C & RNN baseline & 100 & 0.874 \\
 \bottomrule
 \end{tabular}
 \end{table}
-\subsection{Training Loss Curves}
-The training curves in Figures~\ref{fig:lstm-loss-curve} and \ref{fig:baseline-loss-curve} provide a complementary view of optimization behavior.
-Both models reduce loss quickly early in training, but the conditional LSTM settles at a lower training and validation loss than the simpler RNN baseline. The baseline curve is also noisier, with larger validation spikes later in training, while the LSTM curve is smoother and finishes at a lower loss. This matches the quantitative results in Table~\ref{tab:baseline} and suggests that the LSTM is the stronger model of the two, although both models still show a gap between training and validation loss.
 
-\begin{figure}[h!t]
+\subsection{Generated Sequence Annotation}
+To inspect whether generated sequences resembled known protein families, we
+generated six sequences from different environmental prompts and submitted them
+to InterProScan (full details in Appendix~\ref{app:generated}). All six outputs
+started with methionine and reached the 100-amino-acid generation limit. Five
+of six matched type I antifreeze protein (IPR000104), including cold, hot,
+temperate-preset, desert, and ice-moon prompts. This is biologically plausible
+for the cold cases because real type I antifreeze proteins are alanine-rich
+alpha-helical proteins; however, the repeated antifreeze calls across several
+unrelated prompts also reveal a limitation: the model often generates
+low-complexity alanine/leucine-rich sequences. The clearest environmental signal
+appears in the first 4--8 residues, where temperate prompts produce a
+lysine/leucine motif, extreme cold expands the lysine/leucine motif, and the
+85$^\circ$C desert prompt produces a threonine/leucine motif.
+
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.8\linewidth]{train_loss_curve_lstm.png}
-\caption{Training and validation loss for the conditional LSTM model over 100 epochs. The loss decreases steadily and ends lower than the baseline model, indicating better optimization and generalization on the held-out validation split.}
-\label{fig:lstm-loss-curve}
+\begin{minipage}{0.49\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{train_loss_curve_lstm.png}
+\end{minipage}
+\hfill
+\begin{minipage}{0.49\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{train_loss_curve_baseline.png}
+\end{minipage}
+\caption{Training and validation loss over 100 epochs. The LSTM (left) reaches
+a lower validation loss than the simpler RNN baseline (right), matching the
+metrics in Table~\ref{tab:baseline}.}
+\label{fig:loss-curves}
 \end{figure}
 
-\begin{figure}[h!t]
+\subsection{Earth-to-Exoplanet Shift}
+The exoplanet comparison directly addresses distribution shift. The model is
+trained on Earth sampling sites, but confirmed exoplanets with equilibrium
+temperatures between 200 K and 400 K can still have temperature and radiation
+combinations outside the Earth training cloud. Figure~\ref{fig:exo} shows this
+gap: Earth data provide useful extreme examples, but exoplanet-like prompts can
+ask the model to extrapolate beyond the distribution it learned from.
+
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.8\linewidth]{train_loss_curve_baseline.png}
-\caption{Training and validation loss for the conditional RNN baseline over 100 epochs. The baseline improves during training, but it converges to a higher loss than the LSTM and shows more pronounced validation fluctuations.}
-\label{fig:baseline-loss-curve}
+\includegraphics[width=0.62\linewidth]{exoplanet_vs_environmental_comparison.png}
+\caption{Distribution shift between Earth data and confirmed exoplanets. Gray
+points are cleaned Earth protein-sampling rows; red triangles are exoplanets
+with equilibrium temperature and insolation data. The y-axis is solar radiation
+on a log scale. Many exoplanets lie outside the Earth training range, so
+generated sequences for those conditions should be interpreted as exploratory
+hypotheses rather than validated designs.}
+\label{fig:exo}
 \end{figure}
 
-\subsection{Exoplanet and Extremophile Comparison}
-To contextualize our Earth-based training data, we compared the environmental distribution of our cleaned dataset against confirmed exoplanets in the NASA Exoplanet Archive. The script queries the archive for planets with equilibrium temperatures between 200~K and 400~K and converts their insolation flux to the same units as our WorldClim solar-radiation data (kJ/m$^2$/day). Figure~\ref{fig:exoplanet-comparison} overlays the temperature and radiation distributions: Earth's extremophiles (gray background) span a relatively narrow environmental range, while confirmed exoplanets extend to higher temperatures and radiation levels. This comparison motivates our modeling approach: by training on Earth's extreme environments, we establish a baseline; by then prompting the model with exoplanet-like conditions, we can explore whether it generates protein sequences plausible for those worlds. Such generated sequences would require independent validation (e.g., fold-prediction, stability assays) before any claim of functionality.
+\section{Discussion and Conclusion}
+The project succeeds as an end-to-end genomic-AI pipeline: it links biological
+records to protein sequences, enriches them with environmental variables,
+trains conditional sequence models, evaluates a baseline comparison, and checks
+how far exoplanet prompts shift away from Earth training data. The LSTM is
+better than the RNN baseline on next-token prediction, but 25.42\% accuracy is
+still modest and does not establish biological function.
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.8\linewidth]{exoplanet_vs_environmental_comparison.png}
-\caption{Comparison of Earth extremophile environments and confirmed exoplanets. Each gray point is a sample location from our cleaned dataset, colored by temperature (x-axis) and mean annual solar radiation (y-axis, log scale). Red triangles are confirmed exoplanets with available equilibrium temperature and insolation data. The comparison reveals that known exoplanets often exceed the environmental extremes in our training set, motivating the use of the model to explore protein sequences for more extreme scenarios.}
-\label{fig:exoplanet-comparison}
-\end{figure}
-\subsection{Generation Interface}
-The trained model can generate a sequence from user-specified temperature, annual precipitation, and solar-radiation values. In command-line inference, the training script tests three example environments: an Earth-like temperate case, a hot arid high-radiation case, and a frozen low-radiation case. UI script exposes the same generation function in Streamlit with sliders and preset environments, including exoplanet-inspired presets. Generation is greedy: at each step, the model chooses the most likely next token until it emits \texttt{<EOS>} or reaches the maximum generation length.
+The largest scientific limitation is distribution shift. Earth extremophiles
+cover many difficult habitats, but exoplanets can differ in atmospheric
+composition, pressure, liquid-water availability, gravity, orbital distance,
+host-star type, stellar flare activity, ultraviolet spectrum, magnetic shielding,
+and radiation chemistry. These variables, not just chemical concentrations, can
+affect whether a sequence is plausible. Our current model only uses
+temperature, precipitation, and solar radiation, so it cannot know whether an
+exoplanet has a protective atmosphere, a nearby active star, or surface
+conditions compatible with biochemistry.
 
-\section{Discussion and Limitations}
-The project demonstrates that a heterogeneous genomics-and-environment dataset can be assembled and used to condition a sequence generator. The pipeline is reproducible and can be iterated on.
+Other limitations are biological. Proteins are shaped by function and ancestry,
+not environment alone; random row splits can leak related proteins across train
+and validation; nonstandard amino acids are not modeled; and generated sequences
+are evaluated only with next-token metrics and simple hydropathy. Future work
+should split by taxonomy or protein family, add an unconditional baseline, add
+more environmental variables where reliable, and validate generated proteins
+with folding, stability, and functional assays before making design claims.
 
-The biological interpretation is still limited. First, the input features are coarse descriptors of sampling location, not direct measurements of the microenvironment where every organism grew. Second, proteins are strongly shaped by function and ancestry; a random row split can overestimate performance if closely related organisms or similar protein families appear in both training and validation. Third, the model generates short prefixes of proteins because training truncates sequences to 200 tokens. Finally, the current evaluation contains next-token and simple hydropathy metrics, but not edit distance, protein-family holdout tests, or functional validation. Those metrics should be added before making strong claims about model quality.
+\clearpage
+\appendix
 
-\subsection{Data Assembly as a Major Undertaking}
-A central finding of this project is the effort required to integrate multi-source biological and environmental data. While GOLD, UniProt, NASA POWER, and WorldClim are all public and in principle free to use, reconciling them into a single clean dataset required handling missing coordinates, API rate limits, temporal inconsistencies, and raster file misalignments. Future work should prioritize development of standard data-integration pipelines for genomics projects to reduce redundant effort across teams.
-
-\subsection{Methodological Recommendations}
-The next most important improvements are therefore methodological rather than architectural: save training curves, split data by taxonomy ID or protein family, add sequence-quality filters for nonstandard amino acids, compare against an unconditional sequence model, and evaluate generated sequences with additional protein-level summaries such as amino-acid composition and predicted stability. SoilGrids features are also already implemented and could be added to the model input once their coverage and units are checked. The exoplanet comparison opens an interesting direction: generating candidate proteins for known exoplanet environments and using computational folding and stability predictors (e.g., ESMFold, FoldX) to assess plausibility.
-
-\section{Reproducibility}
-The main commands are:
+\section{Reproducibility and Supplementary Materials}
+All experiments were run from the project root. These exact commands reproduce
+the main pipeline (assumes a Python virtual environment is activated at
+`.venv'). Replace paths if you use different filenames or locations. Since 
+the data and checkpoints are included in the repo, we can directly run from step 5.\\
+1) Create merged UniProt + GOLD dataset (writes a Parquet at data/combined... this parquet is also included in the repo for convenience, but you can recreate it with this command). We might need to tweak the MAX\_TAX\_IDS and PROTEINS\_PER\_TAX\_ID constants in `src/raw\_data.py' as this is usually very time consuming:
 \begin{verbatim}
-python src/main.py
-
-python src/clean_data.py \
-  --input-parquet combined_uniprot_and_gold_environmental_data_10K.parquet \
-  --output-csv combined_uniprot_and_gold_environmental_data_10K.csv \
-  --cleaned-output-csv cleaned_environmental_data_10K.csv
-
-python src/train.py \
-  --data cleaned_environmental_data_10K.csv \
-  --checkpoint checkpoints/best_alien_protein_model_10K.pt
-
-streamlit run src/app.py -- \
-  --checkpoint checkpoints/best_alien_protein_model_10K.pt \
-  --scaler checkpoints/environmental_scaler.pkl
+source .venv/bin/activate
+python src/raw_data.py
 \end{verbatim}
-The WorldClim GeoTIFFs are expected under \texttt{data/worldclim/}. The main scripts are organized under \texttt{src/}; checkpoints and the scaler are stored under \texttt{checkpoints/}; exploratory figures are stored under \texttt{figures/}; evaluation summaries are stored under \texttt{results/}. External API calls require internet access and may change if source services update their schemas or availability.
+2) Convert and clean the merged dataset (writes CSVs under `data/`):
+\begin{verbatim}
+python src/clean_data.py \
+  --input-parquet data/combined_uniprot_and_gold_environmental_data_10K.parquet \
+  --output-csv data/combined_uniprot_and_gold_environmental_data_10K.csv \
+  --cleaned-output-csv data/cleaned_environmental_data_10K.csv
+\end{verbatim}
+3) Train the conditional LSTM. The checkpoints are already included in the repo, but you can retrain with this command:
+\begin{verbatim}
+python src/train.py \
+  --data data/cleaned_environmental_data_10K.csv \
+  --scaler checkpoints/environmental_scaler_10K.pkl \
+  --checkpoint checkpoints/best_alien_protein_model_10K.pt \
+  --loss-plot figures/train_loss_curve_lstm.png
+\end{verbatim}
+4) Train the baseline RNN for comparison (produces its own checkpoint and loss plot). The checkpoint for the baseline is also included, but you can retrain with this command:
+\begin{verbatim}
+python src/train_baseline.py \
+  --data data/cleaned_environmental_data_10K.csv \
+  --scaler checkpoints/environmental_baseline_scaler_10K.pkl \
+  --checkpoint checkpoints/best_baseline_alien_protein_model_10K.pt \
+  --loss-plot figures/train_loss_curve_baseline.png
+\end{verbatim}
+5) Evaluate both saved checkpoints on the held-out validation split and compute biological summaries:
+\begin{verbatim}
+python src/evaluation.py \
+  --data data/cleaned_environmental_data_10K.csv \
+  --scaler checkpoints/environmental_scaler_10K.pkl \
+  --lstm-checkpoint checkpoints/best_alien_protein_model_10K.pt \
+  --baseline-checkpoint checkpoints/best_baseline_alien_protein_model_10K.pt
+\end{verbatim}
+6) Recreate figures and data-visualization outputs:
+\begin{verbatim}
+python src/visualization_pca.py
+python src/visualization_tsne.py
+python src/exoplanet_data.py
+python src/check_extreme_sites.py
+\end{verbatim}
+7) Launch the interactive Streamlit app for UI exploration:
+\begin{verbatim}
+streamlit run src/app.py
+\end{verbatim}
+
+Script descriptions:
+\begin{itemize}
+  \item `src/raw\_data.py': fetches UniProt sequences for GOLD taxonomy IDs, attaches GOLD
+  coordinates, and queries NASA POWER / WorldClim / SoilGrids to build the
+  raw merged Parquet dataset.
+  \item `src/clean\_data.py': converts the Parquet to CSV, removes rows with numeric
+  sentinel values (overflow/NoData markers), and writes the cleaned CSV used
+  for training.
+  \item `src/train.py': trains the conditional LSTM model and saves the best
+  checkpoint, scaler, and a training loss curve.
+  \item `src/train\_baseline.py': trains the simpler conditional RNN baseline and
+  saves its own checkpoint and loss curve.
+  \item `src/evaluation.py': loads checkpoints and computes statistical metrics
+  (loss, perplexity, accuracy) and biological summaries (GRAVY) on the
+  validation set.
+  \item `src/visualization\_pca.py', `src/visualization\_tsne.py': generate the PCA
+  and t-SNE sequence-space plots saved under `figures/`.
+  \item `src/exoplanet\_data.py': fetches NASA Exoplanet Archive records and
+  creates the exoplanet vs Earth environmental comparison figure.
+  \item `src/check\_extreme\_sites.py': identifies and writes the listing of extreme
+  sampling locations used in the manuscript (`results/extreme\_conditions.txt').
+
+\end{itemize}
+
+\section{Generated Sequence Inference Details}
+\label{app:generated}
+Table~\ref{tab:generated-sequences} summarizes the six generated sequences and
+InterProScan annotations from the supplementary inference result file. The
+sequence column shows the abbreviated sequence pattern recorded there rather
+than the full 100 amino acids.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Generated sequences and InterProScan annotations. Each sequence was
+generated by the trained LSTM using the listed environmental prompt.}
+\label{tab:generated-sequences}
+\begin{tabular}{p{0.17\linewidth}p{0.19\linewidth}p{0.21\linewidth}p{0.33\linewidth}}
+\toprule
+Condition & Inputs & Sequence pattern & InterProScan annotation \\
+\midrule
+Earth-like temperate & 25$^\circ$C, 1000 mm, 15000 kJ m$^{-2}$ day$^{-1}$ &
+\texttt{MKKKLLLLLL...L} & No protein family predicted \\
+Cold and wet & -23$^\circ$C, 3000 mm, 10000 kJ m$^{-2}$ day$^{-1}$ &
+\texttt{MAAAAAAA...A} & Antifreeze protein type I (IPR000104);
+Cytochrome c class II (IPR002321) \\
+Hot, high radiation & 46$^\circ$C, 2120 mm, 28500 kJ m$^{-2}$ day$^{-1}$ &
+\texttt{MNSLSLAAAA...A} & Antifreeze protein type I (IPR000104);
+Cytochrome c class II (IPR002321) \\
+Earth-like preset & 15$^\circ$C, 1000 mm, 15000 kJ m$^{-2}$ day$^{-1}$ &
+\texttt{MKKKLLLLLAAAA...A} & Antifreeze protein type I (IPR000104);
+Cytochrome c class II (IPR002321) \\
+Scorched desert planet & 85$^\circ$C, 10 mm, 35000 kJ m$^{-2}$ day$^{-1}$ &
+\texttt{MTTTLLLAAA...A} & Antifreeze protein type I (IPR000104) \\
+Frozen ice moon & -40$^\circ$C, 50 mm, 2000 kJ m$^{-2}$ day$^{-1}$ &
+\texttt{MKKKKLLLLLAAA...A} & Antifreeze protein type I (IPR000104);
+TAT domain \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The annotations should be interpreted cautiously. The repeated type I
+antifreeze hit is interesting because several generated sequences are
+alanine-rich, matching a known feature of real type I antifreeze proteins, but
+the same low-complexity pattern also increases the chance of profile matches
+that do not imply a functional folded protein. The Cytochrome c class II hits
+are likely false positives caused by repetitive composition rather than true
+electron-transfer protein generation.
+
+\section{Data and Model Limitations}
+The main report summarizes the major limitations. Additional practical caveats
+are listed here so the project is reproducible and interpretable:
+\begin{itemize}
+  \item GOLD coordinate coverage is sparse: only 64,665 of 530,160 local cached
+  organism rows have both latitude and longitude.
+  \item NASA POWER dates fall back to 2015-01-01 when GOLD collection dates are
+  missing or unparseable, so some daily weather values are proxies rather than
+  exact sampling-day measurements.
+  \item WorldClim variables are long-term climatologies, not conditions measured
+  at the exact sampling moment.
+  \item Multiple proteins from the same taxonomy ID can appear in both training
+  and validation under the current random row split.
+  \item Greedy decoding tends to produce low-complexity sequences. Future work
+  should test temperature sampling, top-k/top-p sampling, repetition penalties,
+  and larger training sets.
+  \item Exoplanet plausibility depends on many variables absent from the model,
+  including atmospheric pressure, atmospheric composition, liquid water,
+  host-star spectrum, flare activity, ultraviolet exposure, gravity, and
+  magnetic shielding.
+\end{itemize}
 
 \begin{thebibliography}{9}
 \bibitem{gold}
 GOLD: Genomes Online Database. \url{https://gold.jgi.doe.gov/}
 
 \bibitem{uniprot}
-The UniProt Consortium. UniProt: the Universal Protein Knowledgebase. \url{https://www.uniprot.org/}
+The UniProt Consortium. UniProt: the Universal Protein Knowledgebase.
+\url{https://www.uniprot.org/}
 
 \bibitem{nasa}
-NASA POWER Project. Prediction Of Worldwide Energy Resources. \url{https://power.larc.nasa.gov/}
+NASA POWER Project. Prediction Of Worldwide Energy Resources.
+\url{https://power.larc.nasa.gov/}
 
 \bibitem{worldclim}
 WorldClim version 2.1 climate data. \url{https://www.worldclim.org/}
 
 \bibitem{soilgrids}
 ISRIC SoilGrids. \url{https://soilgrids.org/}
+
+\bibitem{nasaexo}
+NASA Exoplanet Archive. \url{https://exoplanetarchive.ipac.caltech.edu/}
+
+\bibitem{interpro}
+InterPro: protein sequence analysis and classification.
+\url{https://www.ebi.ac.uk/interpro/}
 \end{thebibliography}
 
 \end{document}

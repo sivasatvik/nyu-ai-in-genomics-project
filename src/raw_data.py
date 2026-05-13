@@ -33,9 +33,9 @@ except ImportError:
 DATA_FILE = Path("data/goldData.xlsx")
 SHEET_NAME = "Organism"
 CACHE_FILE = Path("data/goldData_Organism.parquet")
-OUTPUT_FILE = Path("data/combined_uniprot_and_gold_environmental_data.parquet")
-MAX_TAX_IDS = 1000
-PROTEINS_PER_TAX_ID = 5
+OUTPUT_FILE = Path("data/combined_uniprot_and_gold_environmental_data_10K.parquet")
+MAX_TAX_IDS = 10000
+PROTEINS_PER_TAX_ID = 20
 API_PAUSE_SECONDS = 0.5
 
 
