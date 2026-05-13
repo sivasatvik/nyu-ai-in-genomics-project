@@ -14,8 +14,8 @@
 \captionsetup{font=small}
 \setlist{nosep}
 
-\title{Environmental Adaptation Modeling: Predicting Alien DNA\\
-and Protein Sequences Through Environmental Conditioning}
+\title{Environmental Conditioning of Protein Sequence Generation\\
+       from GOLD, UniProt, NASA POWER, and WorldClim}
 % \author{AI in Genomics Project}
 \date{}
 
@@ -25,14 +25,18 @@ and Protein Sequences Through Environmental Conditioning}
 \begin{abstract}
 This project tests whether environmental measurements from biological sampling
 locations can condition a protein sequence generator. We link GOLD organism
-metadata to reviewed UniProt protein sequences, enrich sample coordinates with
-NASA POWER weather and WorldClim climate variables, remove corrupted numerical
-rows, and train a recurrent neural network to generate amino-acid sequences from
-temperature, precipitation, and solar-radiation inputs. We also compare Earth
-training environments with exoplanet conditions to measure how far the model is
-being asked to extrapolate. The system is a proof of concept: it builds a
-reproducible genomic-AI pipeline, but generated sequences are not yet validated
-as functional proteins.
+metadata to reviewed UniProt proteins, enrich sample coordinates with NASA POWER
+weather and WorldClim climate variables, clean corrupted rows, and train an LSTM
+to generate amino-acid sequences from temperature, precipitation, and
+solar-radiation inputs. The cleaned dataset contains 8,631 protein rows,
+including 2,716 rows from extreme Earth environments. The LSTM outperforms a
+simpler RNN baseline on validation next-token prediction, and generated
+sequences show weak environment-dependent motifs; InterProScan annotates five of
+six generated sequences as type I antifreeze-like, likely driven by
+alanine-rich low-complexity patterns. We also compare Earth training conditions
+with exoplanet temperature and radiation distributions to show where model
+prompts become extrapolations. Overall, this is a reproducible proof of concept,
+not evidence that generated sequences are functional proteins.
 \end{abstract}
 
 \section{Background}
@@ -143,12 +147,13 @@ Exoplanet Archive using temperature and insolation \cite{nasaexo}.
 \section{Results}
 \subsection{Data Distribution}
 The cleaned dataset contains a substantial extreme-Earth subset. Using thresholds
-of annual average temperature below $-10^\circ$C, annual precipitation below
+of annual average temperature below $-10^\circ$C or above $50^\circ$C, annual precipitation below
 50 mm or above 4,000 mm, or mean solar radiation above 18,000 kJ/m$^2$/day, we
 found 2,716 extreme rows out of 8,631 cleaned rows (31.47\%). The first rows in
 the extreme report are cold Antarctic-like sites around $-19$ to $-22^\circ$C
 with low annual precipitation. This gives the model some exposure to challenging
-Earth environments, but not necessarily to exoplanet-like conditions.
+Earth environments, but not necessarily to exoplanet-like conditions. The full
+script output is included in Appendix~\ref{app:extreme}.
 
 \begin{figure}[H]
 \centering
@@ -414,6 +419,169 @@ the same low-complexity pattern also increases the chance of profile matches
 that do not imply a functional folded protein. The Cytochrome c class II hits
 are likely false positives caused by repetitive composition rather than true
 electron-transfer protein generation.
+
+\section{Extreme Earth Site Output}
+\label{app:extreme}
+The following is the output of \texttt{results/extreme\_conditions.txt}, produced
+by \texttt{src/check\_extreme\_sites.py}. It records the thresholds used in the
+main report and lists the first 20 extreme rows.
+
+\begin{verbatim}
+Checking 8631 locations for extreme conditions...
+
+======================================================================
+EXTREME SITE SUMMARY
+======================================================================
+Total locations checked: 8631
+Extreme locations found: 2716
+Percentage extreme: 31.47%
+======================================================================
+
+Details of Extreme Sites (first 20):
+----------------------------------------------------------------------
+
+Row 0:
+  Avg Temperature: -20.8°C
+  Total Annual Precip: 103.0 mm
+  Mean Solar Rad: 12455 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-20.8°C)
+
+Row 1:
+  Avg Temperature: -19.2°C
+  Total Annual Precip: 104.0 mm
+  Mean Solar Rad: 12408 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-19.2°C)
+
+Row 2:
+  Avg Temperature: -22.4°C
+  Total Annual Precip: 89.0 mm
+  Mean Solar Rad: 12386 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-22.4°C)
+
+Row 3:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 4:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 5:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 6:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 7:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 8:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 9:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 10:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 11:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 12:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 13:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 14:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 15:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 16:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 17:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 18:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+Row 19:
+  Avg Temperature: -21.4°C
+  Total Annual Precip: 96.0 mm
+  Mean Solar Rad: 12358 kJ/m2/day
+  Extreme Reasons:
+    - Extreme Cold (-21.4°C)
+
+... and 2696 more extreme sites
+\end{verbatim}
 
 \section{Data and Model Limitations}
 The main report summarizes the major limitations. Additional practical caveats
