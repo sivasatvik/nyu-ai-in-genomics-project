@@ -100,7 +100,7 @@ collection date is missing or unparseable, the code uses 2015-01-01 as a
 fallback. WorldClim rasters add monthly precipitation, solar radiation, average
 temperature, and vapour pressure. The cleaning script removes rows containing
 common no-data values such as \texttt{-9999}, \texttt{-32768}, \texttt{32767},
-\texttt{65535}, or values larger than \texttt{1e30}.
+\texttt{65535}, or values larger than \texttt{$1e^{30}$}.
 
 \begin{table}[H]
 \centering
@@ -292,9 +292,14 @@ records to protein sequences, enriches them with environmental variables,
 trains conditional sequence models, evaluates a baseline comparison, and checks
 how far exoplanet prompts shift away from Earth training data. The LSTM is
 better than the RNN baseline on next-token prediction, but 25.42\% accuracy is
-still modest and does not establish biological function.
+still modest and establishes some biological function. And based on the predicted
+sequences, we can clearly see that the model has some capability to generate
+protein-like sequences with environment-dependent motifs, but it also has a
+strong bias toward low-complexity alanine-rich patterns that match the antifreeze profile.
+This is likely driven by the training data distribution and the model's tendency
+to default to simple patterns when prompted with out-of-distribution conditions.
 
-The extreme-environment subset is also skewed toward cold conditions, so the
+The extreme-environment subset is skewed toward cold conditions, so the
 model sees many more Antarctic-like examples than hot or humid ones. A larger
 and better balanced set of conditional examples across all regimes could reduce
 that skew and likely improve how well the model responds to non-cold prompts.
