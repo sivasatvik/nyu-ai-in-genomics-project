@@ -66,6 +66,25 @@ hypothesis was that a conditional sequence model would learn some environmental
 signal from Earth data, while an exoplanet comparison would reveal where the
 model is extrapolating beyond its training distribution.
 
+\subsection{Design Changes from Original Proposal}
+The original project proposal outlined a two-stage architecture: (1) an
+environment-to-sequence transformer taking 10--20 dimensional chemical
+concentration vectors (C, N, O, S, P, Si, Fe, etc.) as input to generate
+DNA/protein sequences, and (2) a sequence-to-function predictor using protein
+language models (ESM-2) to infer structural and functional properties. However,
+chemical composition data at organism-sampling locations proved difficult to
+obtain at scale and with sufficient temporal alignment to protein collection
+dates. Instead, we pivoted to readily available environmental variables: daily
+surface temperature (NASA POWER), total annual precipitation, and mean annual
+solar radiation (WorldClim) based on the comments on the project proposal.
+We implemented a single-stage conditional LSTM generator rather than a two-stage
+transformer, prioritizing interpretability and reproducibility with freely
+available data. The sequence-to-function step was replaced with direct
+biological annotation (InterProScan) and simple hydropathy (GRAVY) on
+generated sequences. This reduced scope allowed us to build a complete,
+end-to-end pipeline without data bottlenecks and to focus on distribution shift
+between Earth and exoplanet conditions.
+
 \section{Data}
 \subsection{Source Data}
 The pipeline starts with GOLD organism records. The local cached GOLD table has
@@ -401,7 +420,7 @@ Script descriptions:
   (loss, perplexity, accuracy) and biological summaries (GRAVY) on the
   validation set.
   \item `src/visualization\_pca.py', `src/visualization\_tsne.py': generate the PCA
-  and t-SNE sequence-space plots saved under `figures/`.
+  and t-SNE sequence-space plots saved under `figures/'.
   \item `src/exoplanet\_data.py': fetches NASA Exoplanet Archive records and
   creates the exoplanet vs Earth environmental comparison figure.
   \item `src/check\_extreme\_sites.py': identifies and writes the listing of extreme
