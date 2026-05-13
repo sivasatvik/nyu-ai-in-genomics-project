@@ -419,168 +419,112 @@ the same low-complexity pattern also increases the chance of profile matches
 that do not imply a functional folded protein. The Cytochrome c class II hits
 are likely false positives caused by repetitive composition rather than true
 electron-transfer protein generation.
+Due to the low availability of extreme heat and hyper-humid examples in the training data, the model may have defaulted to generating low-complexity alanine-rich sequences that match the antifreeze profile, which is a known issue with sequence generators when prompted with out-of-distribution conditions.
 
 \section{Extreme Earth Site Output}
 \label{app:extreme}
-The following is the output of \texttt{results/extreme\_conditions.txt}, produced
-by \texttt{src/check\_extreme\_sites.py}. It records the thresholds used in the
-main report and lists the first 20 extreme rows.
+The following is the output of the extreme conditions file, produced
+by \texttt{src/check\_extreme\_sites.py}. The per-condition examples show a strong representation of cold Antarctic-like
+locations (AvgTemp ≈ -20 to -22°C) and multiple high-radiation, hyper-arid
+rows (SRad $>$ 21,000 kJ/m²/day) that often co-occur with very low precipitation.
+Notably, the script found no clear "Extreme Heat" ($>$50°C) or "Hyper-Humid"
+examples in the top examples, indicating these regimes are rare or absent in
+the cleaned dataset. For modeling, this means the training set provides
+substantial coverage of cold and high-radiation niches but less direct
+evidence for very hot or extremely wet habitats; extrapolation to those
+conditions should therefore be treated with caution.
 
 \begin{verbatim}
-Checking 8631 locations for extreme conditions...
-
-======================================================================
-EXTREME SITE SUMMARY
-======================================================================
 Total locations checked: 8631
 Extreme locations found: 2716
 Percentage extreme: 31.47%
-======================================================================
 
-Details of Extreme Sites (first 20):
-----------------------------------------------------------------------
+Extreme Cold (showing 5 example(s)):
+  Row 0: 
+    AvgTemp=-20.8C,
+    Precip=103.0mm,
+    SRad=12455kJ/m2/day,
+    Reasons=Extreme Cold (-20.8°C)
+  Row 1:
+    AvgTemp=-19.2C,
+    Precip=104.0mm,
+    SRad=12408kJ/m2/day,
+    Reasons=Extreme Cold (-19.2°C)
+  Row 2:
+    AvgTemp=-22.4C,
+    Precip=89.0mm,
+    SRad=12386kJ/m2/day,
+    Reasons=Extreme Cold (-22.4°C)
+  Row 3:
+    AvgTemp=-21.4C,
+    Precip=96.0mm,
+    SRad=12358kJ/m2/day,
+    Reasons=Extreme Cold (-21.4°C)
+  Row 4:
+    AvgTemp=-21.4C,
+    Precip=96.0mm,
+    SRad=12358kJ/m2/day,
+    Reasons=Extreme Cold (-21.4°C)
 
-Row 0:
-  Avg Temperature: -20.8°C
-  Total Annual Precip: 103.0 mm
-  Mean Solar Rad: 12455 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-20.8°C)
+Extreme Heat (showing 0 example(s)):
+  - None found
 
-Row 1:
-  Avg Temperature: -19.2°C
-  Total Annual Precip: 104.0 mm
-  Mean Solar Rad: 12408 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-19.2°C)
+Hyper-Arid (showing 5 example(s)):
+  Row 2751:
+    AvgTemp=10.6C,
+    Precip=12.0mm,
+    SRad=21609kJ/m2/day,
+    Reasons=Hyper-Arid (12.0mm/yr);High Radiation (21609 kJ/m2/day)
+  Row 3277:
+    AvgTemp=17.7C,
+    Precip=2.0mm,
+    SRad=21324kJ/m2/day,
+    Reasons=Hyper-Arid (2.0mm/yr);High Radiation (21324 kJ/m2/day)
+  Row 3278:
+    AvgTemp=17.7C,
+    Precip=2.0mm,
+    SRad=21324kJ/m2/day,
+    Reasons=Hyper-Arid (2.0mm/yr);High Radiation (21324 kJ/m2/day)
+  Row 3279:
+    AvgTemp=17.7C,
+    Precip=2.0mm,
+    SRad=21324kJ/m2/day,
+    Reasons=Hyper-Arid (2.0mm/yr);High Radiation (21324 kJ/m2/day)
+  Row 3280:
+    AvgTemp=17.7C,
+    Precip=2.0mm,
+    SRad=21324kJ/m2/day,
+    Reasons=Hyper-Arid (2.0mm/yr);High Radiation (21324 kJ/m2/day)
 
-Row 2:
-  Avg Temperature: -22.4°C
-  Total Annual Precip: 89.0 mm
-  Mean Solar Rad: 12386 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-22.4°C)
+Hyper-Humid (showing 0 example(s)):
+  - None found
 
-Row 3:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 4:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 5:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 6:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 7:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 8:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 9:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 10:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 11:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 12:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 13:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 14:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 15:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 16:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 17:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 18:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-Row 19:
-  Avg Temperature: -21.4°C
-  Total Annual Precip: 96.0 mm
-  Mean Solar Rad: 12358 kJ/m2/day
-  Extreme Reasons:
-    - Extreme Cold (-21.4°C)
-
-... and 2696 more extreme sites
+High Radiation (showing 5 example(s)):
+  Row 1141:
+    AvgTemp=15.0C,
+    Precip=601.0mm,
+    SRad=18170kJ/m2/day,
+    Reasons=High Radiation (18170 kJ/m2/day)
+  Row 1142:
+    AvgTemp=15.0C,
+    Precip=601.0mm,
+    SRad=18170kJ/m2/day,
+    Reasons=High Radiation (18170 kJ/m2/day)
+  Row 1143:
+    AvgTemp=15.0C,
+    Precip=601.0mm,
+    SRad=18170kJ/m2/day,
+    Reasons=High Radiation (18170 kJ/m2/day)
+  Row 1144:
+    AvgTemp=15.0C,
+    Precip=601.0mm,
+    SRad=18170kJ/m2/day,
+    Reasons=High Radiation (18170 kJ/m2/day)
+  Row 1145:
+    AvgTemp=15.0C,
+    Precip=601.0mm,
+    SRad=18170kJ/m2/day,
+    Reasons=High Radiation (18170 kJ/m2/day)
 \end{verbatim}
 
 \section{Data and Model Limitations}
@@ -594,6 +538,10 @@ are listed here so the project is reproducible and interpretable:
   exact sampling-day measurements.
   \item WorldClim variables are long-term climatologies, not conditions measured
   at the exact sampling moment.
+  \item The sparsity of extreme conditions in the training data means that
+  model performance on those prompts should be interpreted with caution, especially
+  for hot and hyper-humid conditions that are underrepresented or absent in the
+  cleaned dataset.
   \item Multiple proteins from the same taxonomy ID can appear in both training
   and validation under the current random row split.
   \item Greedy decoding tends to produce low-complexity sequences. Future work

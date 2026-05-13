@@ -67,6 +67,16 @@ def main():
     total_checked = len(df)
     extreme_count = 0
     extreme_details = []
+
+    # Prepare per-condition buckets to collect up to N examples each
+    N_EXAMPLES = 5
+    buckets = {
+        'Extreme Cold': [],
+        'Extreme Heat': [],
+        'Hyper-Arid': [],
+        'Hyper-Humid': [],
+        'High Radiation': []
+    }
     
     print(f"Checking {total_checked} locations for extreme conditions...\n")
     
@@ -75,13 +85,27 @@ def main():
         
         if is_extreme:
             extreme_count += 1
-            extreme_details.append({
+            detail = {
                 'index': idx,
                 'reasons': reasons,
                 'avg_temp': avg_temp,
                 'total_precip': total_precip,
                 'mean_srad': mean_srad
-            })
+            }
+            extreme_details.append(detail)
+
+            # Add to per-condition buckets (limit to N_EXAMPLES each)
+            for reason in reasons:
+                if 'Extreme Cold' in reason and len(buckets['Extreme Cold']) < N_EXAMPLES:
+                    buckets['Extreme Cold'].append(detail)
+                if 'Extreme Heat' in reason and len(buckets['Extreme Heat']) < N_EXAMPLES:
+                    buckets['Extreme Heat'].append(detail)
+                if 'Hyper-Arid' in reason and len(buckets['Hyper-Arid']) < N_EXAMPLES:
+                    buckets['Hyper-Arid'].append(detail)
+                if 'Hyper-Humid' in reason and len(buckets['Hyper-Humid']) < N_EXAMPLES:
+                    buckets['Hyper-Humid'].append(detail)
+                if 'High Radiation' in reason and len(buckets['High Radiation']) < N_EXAMPLES:
+                    buckets['High Radiation'].append(detail)
     
     # Print summary
     print("=" * 70)
@@ -92,21 +116,47 @@ def main():
     print(f"Percentage extreme: {(extreme_count / total_checked * 100):.2f}%")
     print("=" * 70)
     
-    # Print details of extreme sites
+    # Print details of extreme sites: show up to N_EXAMPLES per condition
     if extreme_details:
-        print("\nDetails of Extreme Sites (first 20):")
+        print("\nPer-condition examples (up to 5 each):")
         print("-" * 70)
-        for detail in extreme_details[:20]:
-            print(f"\nRow {detail['index']}:")
-            print(f"  Avg Temperature: {detail['avg_temp']:.1f}°C")
-            print(f"  Total Annual Precip: {detail['total_precip']:.1f} mm")
-            print(f"  Mean Solar Rad: {detail['mean_srad']:.0f} kJ/m2/day")
-            print(f"  Extreme Reasons:")
-            for reason in detail['reasons']:
-                print(f"    - {reason}")
-        
-        if len(extreme_details) > 20:
-            print(f"\n... and {len(extreme_details) - 20} more extreme sites")
+        for cond, examples in buckets.items():
+            print(f"\n{cond} (showing {len(examples)} example(s)):")
+            if not examples:
+                print("  - None found")
+                continue
+            for detail in examples:
+                print(f"\n  Row {detail['index']}:")
+                print(f"    Avg Temperature: {detail['avg_temp']:.1f}°C")
+                print(f"    Total Annual Precip: {detail['total_precip']:.1f} mm")
+                print(f"    Mean Solar Rad: {detail['mean_srad']:.0f} kJ/m2/day")
+                print(f"    Reasons:")
+                for reason in detail['reasons']:
+                    print(f"      - {reason}")
+
+        if len(extreme_details) > sum(len(v) for v in buckets.values()):
+            remaining = len(extreme_details) - sum(len(v) for v in buckets.values())
+            if remaining > 0:
+                print(f"\n... plus {remaining} additional extreme sites not shown in per-condition examples.")
+
+        # Also write a compact results file listing the per-condition examples
+        out_path = 'results/extreme_conditions.txt'
+        from pathlib import Path
+        Path('results').mkdir(parents=True, exist_ok=True)
+        with open(out_path, 'w') as fh:
+            fh.write(f"Total locations checked: {total_checked}\n")
+            fh.write(f"Extreme locations found: {extreme_count}\n")
+            fh.write(f"Percentage extreme: {(extreme_count / total_checked * 100):.2f}%\n\n")
+            for cond, examples in buckets.items():
+                fh.write(f"{cond} (showing {len(examples)} example(s)):\n")
+                if not examples:
+                    fh.write("  - None found\n\n")
+                    continue
+                for detail in examples:
+                    fh.write(f"  Row {detail['index']}: AvgTemp={detail['avg_temp']:.1f}C, Precip={detail['total_precip']:.1f}mm, SRad={detail['mean_srad']:.0f}kJ/m2/day, Reasons={';'.join(detail['reasons'])}\n")
+                fh.write("\n")
+
+        print(f"\nWrote per-condition extreme examples to {out_path}")
     else:
         print("\nNo extreme sites found.")
 
